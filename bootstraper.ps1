@@ -463,19 +463,17 @@ function Install-NetFx48DevPack {
 
 function Install-IISRewrite {
     Write-Phase 'IIS URL Rewrite Module'
-    foreach ($id in @('iis-rewrite-x86', 'iis-rewrite-x64')) {
-        $path = Get-Dependency -Id $id
-        if (-not $path) { continue }
-        $dep = (Get-Manifest).dependencies | Where-Object { $_.id -eq $id } | Select-Object -First 1
-        Write-Step "Instalando $($dep.name)..."
-        $proc = Start-Process -FilePath 'msiexec.exe' `
-            -ArgumentList '/i', "`"$path`"", '/quiet', '/norestart' -Wait -PassThru
-        switch ($proc.ExitCode) {
-            0       { Write-Ok "$($dep.name) instalado." }
-            3010    { Write-Ok "$($dep.name) instalado (reinicialização pendente)." }
-            1638    { Write-Ok "$($dep.name) já está instalado." }
-            default { Write-Fail "$($dep.name) falhou. Código: $($proc.ExitCode)" }
-        }
+    $path = Get-Dependency -Id 'iis-rewrite-x64'
+    if (-not $path) { return }
+    $dep = (Get-Manifest).dependencies | Where-Object { $_.id -eq 'iis-rewrite-x64' } | Select-Object -First 1
+    Write-Step "Instalando $($dep.name)..."
+    $proc = Start-Process -FilePath 'msiexec.exe' `
+        -ArgumentList '/i', "`"$path`"", '/quiet', '/norestart' -Wait -PassThru
+    switch ($proc.ExitCode) {
+        0       { Write-Ok "$($dep.name) instalado." }
+        3010    { Write-Ok "$($dep.name) instalado (reinicialização pendente)." }
+        1638    { Write-Ok "$($dep.name) já está instalado." }
+        default { Write-Fail "$($dep.name) falhou. Código: $($proc.ExitCode)" }
     }
 }
 
@@ -591,14 +589,14 @@ function Install-ErlangAndRabbitMQ {
     $sbin = Join-Path $sbinDir.FullName 'sbin'
 
     Write-Step 'Reconfigurando serviço RabbitMQ...'
-    & "$sbin\rabbitmq-service.bat" remove | Out-Null
-    & "$sbin\rabbitmq-service.bat" install | Out-Null
+    Start-Process 'cmd.exe' -ArgumentList "/c `"$sbin\rabbitmq-service.bat`" remove"  -Wait -WindowStyle Hidden
+    Start-Process 'cmd.exe' -ArgumentList "/c `"$sbin\rabbitmq-service.bat`" install" -Wait -WindowStyle Hidden
 
     Write-Step 'Habilitando Management Plugin...'
-    & "$sbin\rabbitmq-plugins.bat" enable rabbitmq_management | Out-Null
+    Start-Process 'cmd.exe' -ArgumentList "/c `"$sbin\rabbitmq-plugins.bat`" enable rabbitmq_management" -Wait -WindowStyle Hidden
 
     Write-Step 'Iniciando serviço RabbitMQ...'
-    & "$sbin\rabbitmq-service.bat" start | Out-Null
+    Start-Service 'RabbitMQ' -ErrorAction SilentlyContinue
     Start-Sleep -Seconds 3
 
     $svc = Get-Service 'RabbitMQ' -ErrorAction SilentlyContinue
@@ -686,9 +684,8 @@ function Invoke-DepIndividual {
             Write-MenuRow '3' '.NET 10 SDK'
             Write-MenuRow '4' '.NET 10 Hosting Bundle'
             Write-MenuRow '5' '.NET Framework 4.8 Developer Pack'
-            Write-MenuRow '6' 'IIS URL Rewrite x86'
-            Write-MenuRow '7' 'IIS URL Rewrite x64'
-            Write-MenuRow '8' 'Habilitar Features IIS'
+            Write-MenuRow '6' 'IIS URL Rewrite x64'
+            Write-MenuRow '7' 'Habilitar Features IIS'
             Write-EmptyRow
             Write-HBorder '╠' '╣' '─'
             Write-MenuRow '0' 'Voltar' 'Red'
@@ -773,21 +770,6 @@ function Invoke-DepIndividual {
                     Pause-Continue; $running = $false
                 }
                 '6' {
-                    Write-SectionHeader 'IIS URL REWRITE X86'
-                    $path = Get-Dependency -Id 'iis-rewrite-x86'
-                    if ($path) {
-                        Write-Step 'Instalando IIS URL Rewrite x86...'
-                        $proc = Start-Process 'msiexec.exe' -ArgumentList '/i', "`"$path`"", '/quiet', '/norestart' -Wait -PassThru
-                        switch ($proc.ExitCode) {
-                            0    { Write-Ok 'IIS URL Rewrite x86 instalado.' }
-                            3010 { Write-Ok 'IIS URL Rewrite x86 instalado (reinicialização pendente).' }
-                            1638 { Write-Ok 'IIS URL Rewrite x86 já está instalado.' }
-                            default { Write-Fail "Falhou. Código: $($proc.ExitCode)" }
-                        }
-                    }
-                    Pause-Continue; $running = $false
-                }
-                '7' {
                     Write-SectionHeader 'IIS URL REWRITE X64'
                     $path = Get-Dependency -Id 'iis-rewrite-x64'
                     if ($path) {
@@ -802,7 +784,7 @@ function Invoke-DepIndividual {
                     }
                     Pause-Continue; $running = $false
                 }
-                '8' {
+                '7' {
                     Write-SectionHeader 'HABILITAR FEATURES IIS'
                     Enable-IISFeatures
                     Enable-Mago4WindowsFeatures
@@ -1230,14 +1212,8 @@ function Invoke-Diagnostico {
     $ndp48ok = $ndp48 -and [int]$ndp48.Release -ge 528040
     Write-DiagLine '.NET Fx 4.8 Dev Pack' $(if ($ndp48ok) { 'ok' } else { 'fail' }) $(if ($ndp48ok) { $ndp48.Version } else { $null }) 'Execute: Opção 1 > Instalar individual > .NET Fx 4.8 Dev Pack'
 
-    $rwx86 = $entries32 | Where-Object { $_.DisplayName -match 'IIS URL Rewrite' } | Select-Object -First 1
     $rwx64 = $entries64 | Where-Object { $_.DisplayName -match 'IIS URL Rewrite' } | Select-Object -First 1
-    $rwState  = if ($rwx86 -and $rwx64) { 'ok' } elseif ($rwx86 -or $rwx64) { 'warn' } else { 'fail' }
-    $rwDetail = if ($rwx86 -and $rwx64) { "x86 ✔  x64 ✔  ($($rwx64.DisplayVersion))" }
-                elseif ($rwx86)          { 'x86 ✔  x64 ✘' }
-                elseif ($rwx64)          { 'x86 ✘  x64 ✔' }
-                else                     { '' }
-    Write-DiagLine 'IIS URL Rewrite' $rwState $rwDetail 'Execute: Opção 1 > Instalar individual > IIS URL Rewrite'
+    Write-DiagLine 'IIS URL Rewrite x64' $(if ($rwx64) { 'ok' } else { 'fail' }) ($rwx64.DisplayVersion) 'Execute: Opção 1 > Instalar individual > IIS URL Rewrite x64'
 
     $erlang = $allEntries | Where-Object { $_.DisplayName -match 'Erlang' } | Select-Object -First 1
     Write-DiagLine 'Erlang OTP' $(if ($erlang) { 'ok' } else { 'fail' }) ($erlang.DisplayVersion) 'Execute: Opção 2 (Instalar/Corrigir RabbitMQ)'

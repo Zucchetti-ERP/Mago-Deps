@@ -39,12 +39,6 @@
       "filename": "NDP48-DevPack-ENU.exe"
     },
     {
-      "id": "iis-rewrite-x86",
-      "name": "IIS URL Rewrite x86",
-      "source": "repo",
-      "filename": "rewrite_x86_en-US.msi"
-    },
-    {
       "id": "iis-rewrite-x64",
       "name": "IIS URL Rewrite x64",
       "source": "repo",
