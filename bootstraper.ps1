@@ -204,7 +204,7 @@ function Resolve-DotNetUrl {
             }
             'hosting-bundle' {
                 return ($latest.'aspnetcore-runtime'.files |
-                    Where-Object { $_.name -like 'dotnet-hosting-*-win.exe' } |
+                    Where-Object { $_.name -like 'dotnet-hosting*win.exe' } |
                     Select-Object -First 1).url
             }
         }
@@ -478,12 +478,18 @@ function Install-IISRewrite {
 function Clear-ErlangRabbitMQ {
     Write-Phase 'Limpeza de instalações anteriores'
 
-    # Para o serviço RabbitMQ se estiver em execução
-    $svc = Get-Service 'RabbitMQ' -ErrorAction SilentlyContinue
-    if ($svc) {
+    # Mata processos Erlang/RabbitMQ antes de qualquer operação
+    Get-Process -Name 'erl', 'epmd', 'beam' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 1
+
+    # Para e remove serviço se registrado
+    if (Get-Service 'RabbitMQ' -ErrorAction SilentlyContinue) {
         Write-Step 'Parando serviço RabbitMQ...'
-        Stop-Service 'RabbitMQ' -Force -ErrorAction SilentlyContinue
-        Start-Sleep -Seconds 2
+        $p = Start-Process 'sc.exe' -ArgumentList 'stop RabbitMQ'   -PassThru -WindowStyle Hidden
+        $p.WaitForExit(8000); if (-not $p.HasExited) { try { $p.Kill() } catch {} }
+        $p = Start-Process 'sc.exe' -ArgumentList 'delete RabbitMQ' -PassThru -WindowStyle Hidden
+        $p.WaitForExit(8000); if (-not $p.HasExited) { try { $p.Kill() } catch {} }
+        Start-Sleep -Seconds 1
     }
 
     # Desinstala RabbitMQ e Erlang via entradas do registro
@@ -501,20 +507,12 @@ function Clear-ErlangRabbitMQ {
                        else { ($_.UninstallString -split ' ')[0] }
             if (Test-Path $exePath) {
                 Write-Step "Desinstalando $($_.DisplayName)..."
-                Start-Process -FilePath $exePath -ArgumentList '/S' -Wait -ErrorAction SilentlyContinue
+                $p = Start-Process -FilePath $exePath -ArgumentList '/S' -PassThru -ErrorAction SilentlyContinue
+                if ($p) { $p.WaitForExit(40000); if (-not $p.HasExited) { try { $p.Kill() } catch {} } }
                 Write-Ok "$($_.DisplayName) desinstalado."
             }
         }
     }
-
-    # Encerra epmd.exe
-    Write-Step 'Encerrando epmd.exe...'
-    if ($env:ERLANG_HOME) {
-        $epmdBin = Join-Path $env:ERLANG_HOME 'bin\epmd.exe'
-        if (Test-Path $epmdBin) { try { & $epmdBin -kill | Out-Null } catch {} }
-    }
-    try { & epmd -kill | Out-Null } catch {}
-    Get-Process 'epmd' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 
     # Remove diretórios residuais do Program Files
     Write-Step 'Removendo diretórios residuais...'
@@ -593,12 +591,19 @@ function Install-ErlangAndRabbitMQ {
         Write-Fail 'Diretório do RabbitMQ não encontrado após instalação.'; return
     }
     $sbin = Join-Path $sbinDir.FullName 'sbin'
-    Stop-Service 'RabbitMQ' -Force -ErrorAction SilentlyContinue
+
+    # Mata processos Erlang residuais do installer antes de tocar no serviço
+    Get-Process -Name 'erl', 'epmd', 'beam' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
     Start-Sleep -Seconds 1
 
     Write-Step 'Reconfigurando serviço RabbitMQ...'
-    $p = Start-Process 'cmd.exe' -ArgumentList "/c `"$sbin\rabbitmq-service.bat`" remove"  -PassThru -WindowStyle Hidden
-    $p.WaitForExit(20000); if (-not $p.HasExited) { try { $p.Kill() } catch {} }
+    # sc.exe stop/delete é direto e não comunica com o broker — sem risco de trave
+    $p = Start-Process 'sc.exe' -ArgumentList 'stop RabbitMQ'   -PassThru -WindowStyle Hidden
+    $p.WaitForExit(8000); if (-not $p.HasExited) { try { $p.Kill() } catch {} }
+    $p = Start-Process 'sc.exe' -ArgumentList 'delete RabbitMQ' -PassThru -WindowStyle Hidden
+    $p.WaitForExit(8000); if (-not $p.HasExited) { try { $p.Kill() } catch {} }
+    Start-Sleep -Seconds 1
+
     $p = Start-Process 'cmd.exe' -ArgumentList "/c `"$sbin\rabbitmq-service.bat`" install" -PassThru -WindowStyle Hidden
     $p.WaitForExit(20000); if (-not $p.HasExited) { try { $p.Kill() } catch {} }
 
