@@ -339,12 +339,16 @@ function Enable-IISFeatures {
             Write-Fail "Erro ao habilitar funcionalidades IIS: $_"
         }
     } else {
+        # NetFx4Extended-ASPNET45 deve vir primeiro — IIS-NetFxExtensibility45 e
+        # IIS-ASPNET45 dependem dele e falham silenciosamente se não estiver ativo.
+        # IIS-NetFxExtensibility (3.5) e IIS-ASPNET (3.5) foram removidos: precisam
+        # de .NET 3.5, ausente no LTSC e desnecessário para o Mago4.
         $features = @(
+            'NetFx4Extended-ASPNET45',
             'IIS-WebServerRole', 'IIS-WebServer', 'IIS-CommonHttpFeatures',
             'IIS-StaticContent', 'IIS-DefaultDocument', 'IIS-DirectoryBrowsing',
             'IIS-HttpErrors', 'IIS-HttpRedirect', 'IIS-ApplicationDevelopment',
-            'IIS-NetFxExtensibility', 'IIS-NetFxExtensibility45',
-            'IIS-ASPNET', 'IIS-ASPNET45', 'IIS-ASP', 'IIS-CGI',
+            'IIS-NetFxExtensibility45', 'IIS-ASPNET45',
             'IIS-ISAPIExtensions', 'IIS-ISAPIFilter', 'IIS-ServerSideIncludes',
             'IIS-HealthAndDiagnostics', 'IIS-HttpLogging', 'IIS-LoggingLibraries',
             'IIS-RequestMonitor', 'IIS-HttpTracing', 'IIS-Security',
