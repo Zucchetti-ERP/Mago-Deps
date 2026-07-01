@@ -1,6 +1,4 @@
-﻿#Requires -Version 5.1
-
-[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
+﻿[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
 $OutputEncoding = [System.Text.UTF8Encoding]::new()
 
 # ─── Auto-elevate ────────────────────────────────────────────────────────────
@@ -574,19 +572,29 @@ function Install-ErlangAndRabbitMQ {
     if (-not $rmqPath) { return }
 
     Write-Step 'Instalando RabbitMQ 3.13.7...'
-    $proc = Start-Process -FilePath $rmqPath -ArgumentList '/S' -Wait -PassThru
-    if ($proc.ExitCode -ne 0) {
-        Write-Fail "Falha na instalação do RabbitMQ. Código: $($proc.ExitCode)"; return
+    $rmqBase = Join-Path $env:ProgramFiles 'RabbitMQ Server'
+    $proc = Start-Process -FilePath $rmqPath -ArgumentList '/S' -PassThru
+    # O instalador NSIS pode travar tentando iniciar o serviço — verificamos os arquivos
+    $ready = $false
+    for ($i = 0; $i -lt 60; $i++) {
+        Start-Sleep -Seconds 2
+        if ($proc.HasExited) { $ready = $true; break }
+        if (Get-ChildItem $rmqBase -Directory -Filter 'rabbitmq_server-*' -ErrorAction SilentlyContinue | Select-Object -First 1) {
+            $ready = $true; break
+        }
     }
+    if (-not $proc.HasExited) { try { $proc.Kill() } catch {} }
+    if (-not $ready) { Write-Fail 'Arquivos do RabbitMQ não encontrados após instalação.'; return }
     Write-Ok 'RabbitMQ instalado.'
 
-    $rmqBase = Join-Path $env:ProgramFiles 'RabbitMQ Server'
-    $sbinDir  = Get-ChildItem $rmqBase -Directory -Filter 'rabbitmq_server-*' -ErrorAction SilentlyContinue |
-                Sort-Object Name -Descending | Select-Object -First 1
+    $sbinDir = Get-ChildItem $rmqBase -Directory -Filter 'rabbitmq_server-*' -ErrorAction SilentlyContinue |
+               Sort-Object Name -Descending | Select-Object -First 1
     if (-not $sbinDir) {
         Write-Fail 'Diretório do RabbitMQ não encontrado após instalação.'; return
     }
     $sbin = Join-Path $sbinDir.FullName 'sbin'
+    Stop-Service 'RabbitMQ' -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 1
 
     Write-Step 'Reconfigurando serviço RabbitMQ...'
     Start-Process 'cmd.exe' -ArgumentList "/c `"$sbin\rabbitmq-service.bat`" remove"  -Wait -WindowStyle Hidden
