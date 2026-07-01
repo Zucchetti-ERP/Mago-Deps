@@ -188,10 +188,16 @@ function Resolve-DotNetUrl {
         [string]$Channel,
         [string]$Component
     )
-    $feedUrl = "https://dotnetcli.azureedge.net/dotnet/release-metadata/$Channel/releases.json"
     try {
         Write-Step "Consultando releases do .NET $Channel..."
-        $feed   = Invoke-RestMethod -Uri $feedUrl -UseBasicParsing
+        $feed = $null
+        foreach ($feedUrl in @(
+            "https://builds.dotnet.microsoft.com/dotnet/release-metadata/$Channel/releases.json",
+            "https://dotnetcli.azureedge.net/dotnet/release-metadata/$Channel/releases.json"
+        )) {
+            try { $feed = Invoke-RestMethod -Uri $feedUrl -UseBasicParsing -ErrorAction Stop; break } catch {}
+        }
+        if (-not $feed) { throw "Feed inacessível em todos os endpoints." }
         $latest = $feed.releases |
             Where-Object { $_.'release-version' -eq $feed.'latest-release' } |
             Select-Object -First 1
@@ -893,19 +899,15 @@ function Invoke-VerificarDeps {
         $allEntries += Get-ItemProperty $regPath -ErrorAction SilentlyContinue
     }
 
-    # .NET 10 SDK
-    $sdk10 = Get-ChildItem 'HKLM:\SOFTWARE\dotnet\Setup\InstalledVersions\x64\sdk' `
-                 -ErrorAction SilentlyContinue |
-             Where-Object { $_.PSChildName -match '^10\.' } |
-             Sort-Object PSChildName | Select-Object -Last 1
-    $sdkVer = if ($sdk10) { $sdk10.PSChildName } else { $null }
+    # .NET 10 SDK (registry path unreliable — check install dir)
+    $sdk10dir = Get-ChildItem "$env:ProgramFiles\dotnet\sdk" -Directory -ErrorAction SilentlyContinue |
+                Where-Object { $_.Name -match '^10\.' } | Sort-Object Name | Select-Object -Last 1
+    $sdkVer = if ($sdk10dir) { $sdk10dir.Name } else { $null }
 
-    # .NET 10 Hosting Bundle (via ASP.NET Core Runtime 10.x)
-    $hosting10 = Get-ChildItem 'HKLM:\SOFTWARE\dotnet\Setup\InstalledVersions\x64\sharedfx\Microsoft.AspNetCore.App' `
-                     -ErrorAction SilentlyContinue |
-                 Where-Object { $_.PSChildName -match '^10\.' } |
-                 Sort-Object PSChildName | Select-Object -Last 1
-    $hostingVer = if ($hosting10) { $hosting10.PSChildName } else { $null }
+    # .NET 10 Hosting Bundle (via ASP.NET Core Runtime shared dir)
+    $asp10dir = Get-ChildItem "$env:ProgramFiles\dotnet\shared\Microsoft.AspNetCore.App" -Directory -ErrorAction SilentlyContinue |
+                Where-Object { $_.Name -match '^10\.' } | Sort-Object Name | Select-Object -Last 1
+    $hostingVer = if ($asp10dir) { $asp10dir.Name } else { $null }
 
     # Erlang
     $erlang = $allEntries | Where-Object { $_.DisplayName -match 'Erlang' } | Select-Object -First 1
@@ -1214,14 +1216,14 @@ function Invoke-Diagnostico {
     Write-DiagLine 'VC++ Redist x86' $(if ($vcx86) { 'ok' } else { 'fail' }) ($vcx86.DisplayVersion) 'Execute: Opção 1 > Instalar individual > VC++ Redist x86'
     Write-DiagLine 'VC++ Redist x64' $(if ($vcx64) { 'ok' } else { 'fail' }) ($vcx64.DisplayVersion) 'Execute: Opção 1 > Instalar individual > VC++ Redist x64'
 
-    $sdk10 = Get-ChildItem 'HKLM:\SOFTWARE\dotnet\Setup\InstalledVersions\x64\sdk' -ErrorAction SilentlyContinue |
-             Where-Object { $_.PSChildName -match '^10\.' } | Sort-Object PSChildName | Select-Object -Last 1
-    $sdkVer = if ($sdk10) { $sdk10.PSChildName } else { $null }
+    $sdk10dir = Get-ChildItem "$env:ProgramFiles\dotnet\sdk" -Directory -ErrorAction SilentlyContinue |
+               Where-Object { $_.Name -match '^10\.' } | Sort-Object Name | Select-Object -Last 1
+    $sdkVer = if ($sdk10dir) { $sdk10dir.Name } else { $null }
     Write-DiagLine '.NET 10 SDK' $(if ($sdkVer) { 'ok' } else { 'fail' }) $sdkVer 'Execute: Opção 1 > Instalar individual > .NET 10 SDK'
 
-    $hosting10 = Get-ChildItem 'HKLM:\SOFTWARE\dotnet\Setup\InstalledVersions\x64\sharedfx\Microsoft.AspNetCore.App' -ErrorAction SilentlyContinue |
-                 Where-Object { $_.PSChildName -match '^10\.' } | Sort-Object PSChildName | Select-Object -Last 1
-    $hostVer = if ($hosting10) { $hosting10.PSChildName } else { $null }
+    $asp10dir = Get-ChildItem "$env:ProgramFiles\dotnet\shared\Microsoft.AspNetCore.App" -Directory -ErrorAction SilentlyContinue |
+               Where-Object { $_.Name -match '^10\.' } | Sort-Object Name | Select-Object -Last 1
+    $hostVer = if ($asp10dir) { $asp10dir.Name } else { $null }
     Write-DiagLine '.NET 10 Hosting Bundle' $(if ($hostVer) { 'ok' } else { 'fail' }) $hostVer 'Execute: Opção 5 (Reparar .NET Core)'
 
     $ndp48 = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full' -ErrorAction SilentlyContinue
