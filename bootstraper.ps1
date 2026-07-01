@@ -1,4 +1,4 @@
-[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
+Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
 $OutputEncoding = [System.Text.UTF8Encoding]::new()
 
 # ─── Auto-elevate ────────────────────────────────────────────────────────────
@@ -368,16 +368,17 @@ function Enable-IISFeatures {
             try {
                 $cur = ($currentFeats | Where-Object { $_.FeatureName -eq $feat }).State
                 if ($cur -in @('Enabled','EnablePending')) { continue }
-                Enable-WindowsOptionalFeature -Online -FeatureName $feat -NoRestart -ErrorAction Stop | Out-Null
+                # -All habilita automaticamente features pai (ex: NetFx4-AdvSrvs para NetFx4Extended-ASPNET45)
+                Enable-WindowsOptionalFeature -Online -FeatureName $feat -All -NoRestart -ErrorAction Stop | Out-Null
             } catch {
-                Write-Warn "Não disponível nesta edição: $feat"
+                Write-Warn "Não habilitado: $feat — $($_.Exception.Message -replace '\r?\n',' ')"
                 $failCount++
             }
         }
         if ($failCount -eq 0) {
             Write-Ok 'Funcionalidades IIS habilitadas com sucesso.'
         } else {
-            Write-Warn "$failCount funcionalidade(s) não disponíveis nesta edição do Windows."
+            Write-Warn "$failCount funcionalidade(s) não puderam ser habilitadas."
         }
 
         # Fallback para edições (ex: IoT LTSC) onde IIS-ASPNET45 não existe como optional feature.
@@ -426,14 +427,14 @@ function Enable-Mago4WindowsFeatures {
             try {
                 $cur = ($currentFeats | Where-Object { $_.FeatureName -eq $feat }).State
                 if ($cur -in @('Enabled','EnablePending')) { continue }
-                Enable-WindowsOptionalFeature -Online -FeatureName $feat -NoRestart -ErrorAction Stop | Out-Null
+                Enable-WindowsOptionalFeature -Online -FeatureName $feat -All -NoRestart -ErrorAction Stop | Out-Null
             } catch {
-                Write-Warn "Não disponível nesta edição: $feat"
+                Write-Warn "Não habilitado: $feat — $($_.Exception.Message -replace '\r?\n',' ')"
                 $failCount++
             }
         }
         if ($failCount -eq 0) { Write-Ok 'ASP.NET 4.8 e WCF Services habilitados.' }
-        else { Write-Warn "$failCount funcionalidade(s) não disponíveis nesta edição." }
+        else { Write-Warn "$failCount funcionalidade(s) não puderam ser habilitadas." }
     }
 }
 
