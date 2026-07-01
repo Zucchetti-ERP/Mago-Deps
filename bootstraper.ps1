@@ -359,10 +359,11 @@ function Enable-IISFeatures {
         )
         Write-Step "Habilitando $($features.Count) funcionalidades IIS (Windows Desktop)..."
         $failCount = 0
+        $currentFeats = Get-WindowsOptionalFeature -Online -ErrorAction SilentlyContinue
         foreach ($feat in $features) {
             try {
-                $state = Get-WindowsOptionalFeature -Online -FeatureName $feat -ErrorAction SilentlyContinue
-                if ($state -and $state.State -eq 'Enabled') { continue }
+                $cur = ($currentFeats | Where-Object { $_.FeatureName -eq $feat }).State
+                if ($cur -in @('Enabled','EnablePending')) { continue }
                 Enable-WindowsOptionalFeature -Online -FeatureName $feat -NoRestart -ErrorAction Stop | Out-Null
             } catch {
                 Write-Warn "Não disponível nesta edição: $feat"
@@ -402,10 +403,11 @@ function Enable-Mago4WindowsFeatures {
         )
         Write-Step 'Habilitando ASP.NET 4.8 e WCF Services (Windows Desktop)...'
         $failCount = 0
+        $currentFeats = Get-WindowsOptionalFeature -Online -ErrorAction SilentlyContinue
         foreach ($feat in $features) {
             try {
-                $state = Get-WindowsOptionalFeature -Online -FeatureName $feat -ErrorAction SilentlyContinue
-                if ($state -and $state.State -eq 'Enabled') { continue }
+                $cur = ($currentFeats | Where-Object { $_.FeatureName -eq $feat }).State
+                if ($cur -in @('Enabled','EnablePending')) { continue }
                 Enable-WindowsOptionalFeature -Online -FeatureName $feat -NoRestart -ErrorAction Stop | Out-Null
             } catch {
                 Write-Warn "Não disponível nesta edição: $feat"
@@ -1198,10 +1200,13 @@ function Invoke-Diagnostico {
         $fWs        = [bool]($featWs      -and $featWs.Installed)
         $fAppInit   = [bool]($featAppInit -and $featAppInit.Installed)
     } else {
-        $fIIS     = (Get-WindowsOptionalFeature -Online -FeatureName 'IIS-WebServerRole'   -ErrorAction SilentlyContinue).State -eq 'Enabled'
-        $fAsp     = (Get-WindowsOptionalFeature -Online -FeatureName 'IIS-ASPNET45'         -ErrorAction SilentlyContinue).State -eq 'Enabled'
-        $fWs      = (Get-WindowsOptionalFeature -Online -FeatureName 'IIS-WebSockets'       -ErrorAction SilentlyContinue).State -eq 'Enabled'
-        $fAppInit = (Get-WindowsOptionalFeature -Online -FeatureName 'IIS-ApplicationInit'  -ErrorAction SilentlyContinue).State -eq 'Enabled'
+        # Uma única chamada DISM para evitar timeout na inicialização por query sequencial
+        $allFeats = Get-WindowsOptionalFeature -Online -ErrorAction SilentlyContinue
+        $fEnabled = { param($n) ($allFeats | Where-Object { $_.FeatureName -eq $n }).State -in @('Enabled','EnablePending') }
+        $fIIS     = & $fEnabled 'IIS-WebServerRole'
+        $fAsp     = & $fEnabled 'IIS-ASPNET45'
+        $fWs      = & $fEnabled 'IIS-WebSockets'
+        $fAppInit = & $fEnabled 'IIS-ApplicationInit'
     }
     Write-DiagLine 'IIS instalado'    $(if ($fIIS)     { 'ok' } else { 'fail' }) '' 'Execute: Opção 1 > Instalar IIS'
     Write-DiagLine 'ASP.NET 4.8'      $(if ($fAsp)     { 'ok' } else { 'fail' }) '' 'Execute: Opção 1 > Habilitar Features IIS'
