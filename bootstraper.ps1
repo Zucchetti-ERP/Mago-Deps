@@ -379,6 +379,20 @@ function Enable-IISFeatures {
         } else {
             Write-Warn "$failCount funcionalidade(s) não disponíveis nesta edição do Windows."
         }
+
+        # Fallback para edições (ex: IoT LTSC) onde IIS-ASPNET45 não existe como optional feature.
+        # aspnet_regiis.exe -i configura IIS diretamente sem precisar da optional feature.
+        $aspEnabled = ($currentFeats | Where-Object { $_.FeatureName -eq 'IIS-ASPNET45' }).State -in @('Enabled','EnablePending')
+        if (-not $aspEnabled) {
+            $aspReg = "$env:SystemRoot\Microsoft.NET\Framework64\v4.0.30319\aspnet_regiis.exe"
+            if (Test-Path $aspReg) {
+                Write-Step 'Registrando ASP.NET 4.x no IIS (fallback IoT/LTSC)...'
+                $p = Start-Process $aspReg -ArgumentList '-i' -PassThru -WindowStyle Hidden
+                $p.WaitForExit(30000); if (-not $p.HasExited) { try { $p.Kill() } catch {} }
+                if ($p.ExitCode -eq 0) { Write-Ok 'ASP.NET 4.x registrado no IIS.' }
+                else { Write-Warn "aspnet_regiis saiu com código $($p.ExitCode)." }
+            }
+        }
     }
 }
 
@@ -1208,7 +1222,22 @@ function Invoke-Diagnostico {
         $allFeats = Get-WindowsOptionalFeature -Online -ErrorAction SilentlyContinue
         $fEnabled = { param($n) ($allFeats | Where-Object { $_.FeatureName -eq $n }).State -in @('Enabled','EnablePending') }
         $fIIS     = & $fEnabled 'IIS-WebServerRole'
+        # IIS-ASPNET45 pode não existir como optional feature em edições IoT/LTSC.
+        # Fallback: aspnet_regiis -lv verifica se ASP.NET está registrado no IIS diretamente.
         $fAsp     = & $fEnabled 'IIS-ASPNET45'
+        if (-not $fAsp) {
+            $aspReg = "$env:SystemRoot\Microsoft.NET\Framework64\v4.0.30319\aspnet_regiis.exe"
+            if (Test-Path $aspReg) {
+                $pinfo = New-Object System.Diagnostics.ProcessStartInfo $aspReg, '-lv'
+                $pinfo.RedirectStandardOutput = $true; $pinfo.UseShellExecute = $false
+                try {
+                    $proc = [System.Diagnostics.Process]::Start($pinfo)
+                    $out  = $proc.StandardOutput.ReadToEnd()
+                    $proc.WaitForExit(5000)
+                    $fAsp = $out -match '4\.\d+.*Valid'
+                } catch {}
+            }
+        }
         $fWs      = & $fEnabled 'IIS-WebSockets'
         $fAppInit = & $fEnabled 'IIS-ApplicationInit'
     }
