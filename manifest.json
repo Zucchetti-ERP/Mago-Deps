@@ -1,0 +1,67 @@
+{
+  "baseRepoUrl": "https://raw.githubusercontent.com/Zucchetti-ERP/Mago-Deps/master",
+  "dependencies": [
+    {
+      "id": "vcredist-x86",
+      "name": "Visual C++ Redist 2015+ x86",
+      "source": "direct",
+      "url": "https://aka.ms/vs/17/release/vc_redist.x86.exe",
+      "filename": "vc_redist.x86.exe"
+    },
+    {
+      "id": "vcredist-x64",
+      "name": "Visual C++ Redist 2015+ x64",
+      "source": "direct",
+      "url": "https://aka.ms/vs/17/release/vc_redist.x64.exe",
+      "filename": "vc_redist.x64.exe"
+    },
+    {
+      "id": "dotnet10-sdk",
+      "name": ".NET 10 SDK",
+      "source": "dotnet-feed",
+      "channel": "10.0",
+      "component": "sdk-win-x64",
+      "filename": "dotnet-sdk-10-win-x64.exe"
+    },
+    {
+      "id": "dotnet10-hosting",
+      "name": ".NET 10 Hosting Bundle",
+      "source": "dotnet-feed",
+      "channel": "10.0",
+      "component": "hosting-bundle",
+      "filename": "dotnet-hosting-10-win.exe"
+    },
+    {
+      "id": "netfx48-devpack",
+      "name": ".NET Framework 4.8 Developer Pack",
+      "source": "direct",
+      "url": "https://download.visualstudio.microsoft.com/download/pr/714a99a2-db28-432e-9a39-4345ba11e73f/5108686aec021898cec3de2cc4d9fd3c/ndp48-devpack-enu.exe",
+      "filename": "NDP48-DevPack-ENU.exe"
+    },
+    {
+      "id": "iis-rewrite-x86",
+      "name": "IIS URL Rewrite x86",
+      "source": "repo",
+      "filename": "rewrite_x86_en-US.msi"
+    },
+    {
+      "id": "iis-rewrite-x64",
+      "name": "IIS URL Rewrite x64",
+      "source": "repo",
+      "filename": "rewrite_amd64_en-US.msi"
+    },
+    {
+      "id": "erlang",
+      "name": "Erlang 27.3.4.13",
+      "source": "direct",
+      "url": "https://github.com/erlang/otp/releases/download/OTP-27.3.4.13/otp_win64_27.3.4.13.exe",
+      "filename": "otp_win64_27.3.4.13.exe"
+    },
+    {
+      "id": "rabbitmq",
+      "name": "RabbitMQ 3.13.7",
+      "source": "repo",
+      "filename": "rabbitmq-server-3.13.7.exe"
+    }
+  ]
+}
