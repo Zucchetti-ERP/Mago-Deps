@@ -597,11 +597,14 @@ function Install-ErlangAndRabbitMQ {
     Start-Sleep -Seconds 1
 
     Write-Step 'Reconfigurando serviço RabbitMQ...'
-    Start-Process 'cmd.exe' -ArgumentList "/c `"$sbin\rabbitmq-service.bat`" remove"  -Wait -WindowStyle Hidden
-    Start-Process 'cmd.exe' -ArgumentList "/c `"$sbin\rabbitmq-service.bat`" install" -Wait -WindowStyle Hidden
+    $p = Start-Process 'cmd.exe' -ArgumentList "/c `"$sbin\rabbitmq-service.bat`" remove"  -PassThru -WindowStyle Hidden
+    $p.WaitForExit(20000); if (-not $p.HasExited) { try { $p.Kill() } catch {} }
+    $p = Start-Process 'cmd.exe' -ArgumentList "/c `"$sbin\rabbitmq-service.bat`" install" -PassThru -WindowStyle Hidden
+    $p.WaitForExit(20000); if (-not $p.HasExited) { try { $p.Kill() } catch {} }
 
     Write-Step 'Habilitando Management Plugin...'
-    Start-Process 'cmd.exe' -ArgumentList "/c `"$sbin\rabbitmq-plugins.bat`" enable rabbitmq_management" -Wait -WindowStyle Hidden
+    $p = Start-Process 'cmd.exe' -ArgumentList "/c `"$sbin\rabbitmq-plugins.bat`" enable --offline rabbitmq_management" -PassThru -WindowStyle Hidden
+    $p.WaitForExit(30000); if (-not $p.HasExited) { try { $p.Kill() } catch {} }
 
     Write-Step 'Iniciando serviço RabbitMQ...'
     Start-Service 'RabbitMQ' -ErrorAction SilentlyContinue
