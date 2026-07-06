@@ -502,22 +502,65 @@ function Install-IISRewrite {
     }
 }
 
+function Wait-ServiceRemoved {
+    param([string]$Name, [int]$TimeoutSeconds = 10)
+    for ($i = 0; $i -lt ($TimeoutSeconds * 2); $i++) {
+        if (-not (Get-Service $Name -ErrorAction SilentlyContinue)) { return $true }
+        Start-Sleep -Milliseconds 500
+    }
+    return -not (Get-Service $Name -ErrorAction SilentlyContinue)
+}
+
+function Stop-ErlangProcesses {
+    # Para o epmd graciosamente (evita deixar a porta 4369 num estado esquisito) antes de
+    # forçar o encerramento de qualquer processo Erlang/RabbitMQ remanescente.
+    $epmdBin = $null
+    if ($env:ERLANG_HOME) {
+        $candidate = Join-Path $env:ERLANG_HOME 'bin\epmd.exe'
+        if (Test-Path $candidate) { $epmdBin = $candidate }
+    }
+    if (-not $epmdBin) {
+        $epmdBin = Get-ChildItem $env:ProgramFiles -Directory -ErrorAction SilentlyContinue |
+                   Where-Object { $_.Name -match '^(erl|Erlang)' } |
+                   ForEach-Object { Join-Path $_.FullName 'bin\epmd.exe' } |
+                   Where-Object { Test-Path $_ } | Select-Object -First 1
+    }
+    if ($epmdBin) { try { & $epmdBin -kill | Out-Null } catch {} }
+
+    Get-Process -Name 'erl', 'werl', 'epmd', 'erlsrv' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 1
+}
+
+function Remove-DirWithRetry {
+    param([string]$Path, [int]$Retries = 5)
+    for ($i = 0; $i -lt $Retries; $i++) {
+        if (-not (Test-Path $Path)) { return $true }
+        Remove-Item $Path -Recurse -Force -ErrorAction SilentlyContinue
+        if (-not (Test-Path $Path)) { return $true }
+        Start-Sleep -Seconds 2
+    }
+    return -not (Test-Path $Path)
+}
+
 function Clear-ErlangRabbitMQ {
     Write-Phase 'Limpeza de instalações anteriores'
+    $rmqBase = Join-Path $env:ProgramFiles 'RabbitMQ Server'
 
-    # Mata processos Erlang/RabbitMQ antes de qualquer operação
-    Get-Process -Name 'erl', 'epmd', 'beam' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-    Start-Sleep -Seconds 1
-
-    # Para e remove serviço se registrado
+    # Para e remove o serviço primeiro — matar o node por baixo do SCM pode disparar um
+    # restart automático (erlsrv) antes do sc stop/delete rodarem, travando arquivos.
     if (Get-Service 'RabbitMQ' -ErrorAction SilentlyContinue) {
         Write-Step 'Parando serviço RabbitMQ...'
         $p = Start-Process 'sc.exe' -ArgumentList 'stop RabbitMQ'   -PassThru -WindowStyle Hidden
-        $p.WaitForExit(8000); if (-not $p.HasExited) { try { $p.Kill() } catch {} }
+        if (-not $p.WaitForExit(8000)) { try { $p.Kill() } catch {} }
         $p = Start-Process 'sc.exe' -ArgumentList 'delete RabbitMQ' -PassThru -WindowStyle Hidden
-        $p.WaitForExit(8000); if (-not $p.HasExited) { try { $p.Kill() } catch {} }
-        Start-Sleep -Seconds 1
+        if (-not $p.WaitForExit(8000)) { try { $p.Kill() } catch {} }
+        if (-not (Wait-ServiceRemoved -Name 'RabbitMQ')) {
+            Write-Warn 'Serviço RabbitMQ ainda aparece registrado — feche services.msc/Gerenciador de Tarefas se estiverem abertos.'
+        }
     }
+
+    # Mata (graciosamente e depois à força) processos Erlang/RabbitMQ residuais
+    Stop-ErlangProcesses
 
     # Desinstala RabbitMQ e Erlang via entradas do registro
     $allEntries = @()
@@ -535,25 +578,34 @@ function Clear-ErlangRabbitMQ {
             if (Test-Path $exePath) {
                 Write-Step "Desinstalando $($_.DisplayName)..."
                 $p = Start-Process -FilePath $exePath -ArgumentList '/S' -PassThru -ErrorAction SilentlyContinue
-                if ($p) { $p.WaitForExit(40000); if (-not $p.HasExited) { try { $p.Kill() } catch {} } }
+                if ($p) { if (-not $p.WaitForExit(40000)) { try { $p.Kill() } catch {} } }
                 Write-Ok "$($_.DisplayName) desinstalado."
             }
         }
     }
 
-    # Remove diretórios residuais do Program Files
+    # Fallback: instalações anteriores interrompidas durante a extração (antes de escrever a
+    # entrada de registro) não aparecem no loop acima, mas ainda podem ter um uninstall.exe na
+    # própria pasta de instalação — tenta o desinstalador oficial antes de apagar arquivos à mão.
+    $rmqUninstallExe = Join-Path $rmqBase 'uninstall.exe'
+    if (Test-Path $rmqUninstallExe) {
+        Write-Step 'Desinstalando RabbitMQ Server (uninstall.exe encontrado na pasta de instalação)...'
+        $p = Start-Process -FilePath $rmqUninstallExe -ArgumentList '/S' -PassThru -ErrorAction SilentlyContinue
+        if ($p) { if (-not $p.WaitForExit(40000)) { try { $p.Kill() } catch {} } }
+        Write-Ok 'RabbitMQ Server desinstalado.'
+    }
+
+    # Remove diretórios residuais do Program Files — último recurso, com retry para absorver
+    # handles que ainda não soltaram logo após matar os processos.
     Write-Step 'Removendo diretórios residuais...'
-    $rmqDir = Join-Path $env:ProgramFiles 'RabbitMQ Server'
-    if (Test-Path $rmqDir) {
-        Remove-Item $rmqDir -Recurse -Force -ErrorAction SilentlyContinue
-        if (Test-Path $rmqDir) { Write-Warn 'Não foi possível remover completamente: RabbitMQ Server' }
-        else { Write-Ok 'Pasta RabbitMQ Server removida.' }
+    if (Test-Path $rmqBase) {
+        if (Remove-DirWithRetry $rmqBase) { Write-Ok 'Pasta RabbitMQ Server removida.' }
+        else { Write-Warn 'Não foi possível remover completamente: RabbitMQ Server' }
     }
     Get-ChildItem $env:ProgramFiles -Directory -ErrorAction SilentlyContinue |
     Where-Object { $_.Name -match '^(erl|Erlang)' } | ForEach-Object {
-        Remove-Item $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
-        if (Test-Path $_.FullName) { Write-Warn "Não foi possível remover: $($_.Name)" }
-        else { Write-Ok "Pasta $($_.Name) removida." }
+        if (Remove-DirWithRetry $_.FullName) { Write-Ok "Pasta $($_.Name) removida." }
+        else { Write-Warn "Não foi possível remover: $($_.Name)" }
     }
 
     # Remove dados de aplicação do RabbitMQ
@@ -570,6 +622,12 @@ function Install-ErlangAndRabbitMQ {
 
     # ── Erlang ──
     Write-Phase 'Erlang OTP'
+    $staleErlDir = Get-ChildItem $env:ProgramFiles -Directory -ErrorAction SilentlyContinue |
+                   Where-Object { $_.Name -match '^(erl|Erlang)' } | Select-Object -First 1
+    if ($staleErlDir) {
+        Write-Fail "A limpeza não conseguiu remover uma instalação anterior do Erlang ($($staleErlDir.FullName)). Feche processos que possam estar usando a pasta (Explorer, antivírus, terminal) e tente novamente."
+        return
+    }
     $erlPath = Get-Dependency -Id 'erlang'
     if (-not $erlPath) { return }
 
@@ -602,8 +660,7 @@ function Install-ErlangAndRabbitMQ {
     # — é essa etapa interna que travava o instalador silenciosamente. O serviço é registrado e
     # iniciado por este script logo abaixo, de forma controlada e com timeouts próprios.
     $proc = Start-Process -FilePath $rmqPath -ArgumentList '/S', '/NOSERVICEINSTALL' -PassThru
-    $proc.WaitForExit(120000)
-    if (-not $proc.HasExited) {
+    if (-not $proc.WaitForExit(120000)) {
         Write-Fail 'Instalador do RabbitMQ excedeu o tempo limite.'
         try { $proc.Kill() } catch {}
         return
@@ -623,24 +680,41 @@ function Install-ErlangAndRabbitMQ {
     }
     $sbin = Join-Path $sbinDir.FullName 'sbin'
 
-    # Mata processos Erlang residuais do installer antes de tocar no serviço
-    Get-Process -Name 'erl', 'epmd', 'beam' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-    Start-Sleep -Seconds 1
-
     Write-Step 'Reconfigurando serviço RabbitMQ...'
     # sc.exe stop/delete é direto e não comunica com o broker — sem risco de trave
     $p = Start-Process 'sc.exe' -ArgumentList 'stop RabbitMQ'   -PassThru -WindowStyle Hidden
-    $p.WaitForExit(8000); if (-not $p.HasExited) { try { $p.Kill() } catch {} }
+    if (-not $p.WaitForExit(8000)) { try { $p.Kill() } catch {} }
     $p = Start-Process 'sc.exe' -ArgumentList 'delete RabbitMQ' -PassThru -WindowStyle Hidden
-    $p.WaitForExit(8000); if (-not $p.HasExited) { try { $p.Kill() } catch {} }
-    Start-Sleep -Seconds 1
+    if (-not $p.WaitForExit(8000)) { try { $p.Kill() } catch {} }
+    if (-not (Wait-ServiceRemoved -Name 'RabbitMQ')) {
+        Write-Warn 'Serviço RabbitMQ ainda aparece registrado — feche services.msc/Gerenciador de Tarefas se estiverem abertos.'
+    }
 
-    $p = Start-Process 'cmd.exe' -ArgumentList "/c `"$sbin\rabbitmq-service.bat`" install" -PassThru -WindowStyle Hidden
-    $p.WaitForExit(20000); if (-not $p.HasExited) { try { $p.Kill() } catch {} }
+    # Mata processos Erlang residuais do installer antes de registrar o serviço
+    Stop-ErlangProcesses
+
+    $svcLog = Join-Path $env:TEMP 'rabbitmq-service-install.log'
+    Remove-Item $svcLog, "$svcLog.err" -ErrorAction SilentlyContinue
+    $p = Start-Process 'cmd.exe' -ArgumentList "/c `"$sbin\rabbitmq-service.bat`" install" -PassThru -WindowStyle Hidden -RedirectStandardOutput $svcLog -RedirectStandardError "$svcLog.err"
+    if (-not $p.WaitForExit(20000)) { try { $p.Kill() } catch {} }
+    if ($p.ExitCode -ne 0) {
+        Write-Fail "Falha ao registrar o serviço RabbitMQ (código $($p.ExitCode))."
+        Get-Content $svcLog, "$svcLog.err" -ErrorAction SilentlyContinue | Where-Object { $_ } | ForEach-Object { Write-Warn $_ }
+        return
+    }
+    Write-Ok 'Serviço RabbitMQ registrado.'
 
     Write-Step 'Habilitando Management Plugin...'
-    $p = Start-Process 'cmd.exe' -ArgumentList "/c `"$sbin\rabbitmq-plugins.bat`" enable --offline rabbitmq_management" -PassThru -WindowStyle Hidden
-    $p.WaitForExit(30000); if (-not $p.HasExited) { try { $p.Kill() } catch {} }
+    $pluginLog = Join-Path $env:TEMP 'rabbitmq-plugin-enable.log'
+    Remove-Item $pluginLog, "$pluginLog.err" -ErrorAction SilentlyContinue
+    $p = Start-Process 'cmd.exe' -ArgumentList "/c `"$sbin\rabbitmq-plugins.bat`" enable --offline rabbitmq_management" -PassThru -WindowStyle Hidden -RedirectStandardOutput $pluginLog -RedirectStandardError "$pluginLog.err"
+    if (-not $p.WaitForExit(30000)) { try { $p.Kill() } catch {} }
+    if ($p.ExitCode -ne 0) {
+        Write-Warn "Management Plugin pode não ter sido habilitado (código $($p.ExitCode))."
+        Get-Content $pluginLog, "$pluginLog.err" -ErrorAction SilentlyContinue | Where-Object { $_ } | ForEach-Object { Write-Warn $_ }
+    } else {
+        Write-Ok 'Management Plugin habilitado.'
+    }
 
     Write-Step 'Iniciando serviço RabbitMQ...'
     Start-Service 'RabbitMQ' -ErrorAction SilentlyContinue
@@ -651,6 +725,13 @@ function Install-ErlangAndRabbitMQ {
         Write-Ok 'Serviço RabbitMQ iniciado com sucesso.'
     } else {
         Write-Warn 'Serviço RabbitMQ pode não ter iniciado. Verifique manualmente.'
+        $rmqLogDir = Join-Path $env:APPDATA 'RabbitMQ\log'
+        $rmqLog = Get-ChildItem $rmqLogDir -Filter '*.log' -ErrorAction SilentlyContinue |
+                  Sort-Object LastWriteTime -Descending | Select-Object -First 1
+        if ($rmqLog) {
+            Write-Step "Últimas linhas de $($rmqLog.Name):"
+            Get-Content $rmqLog.FullName -Tail 15 -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
+        }
     }
 }
 
