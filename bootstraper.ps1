@@ -559,6 +559,11 @@ function Clear-ErlangRabbitMQ {
         }
     }
 
+    # sc delete só limpa o registro do SCM — o erlsrv mantém seu próprio cadastro do serviço
+    # à parte, e uma entrada velha aqui pode fazer o próximo "erlsrv add" falhar ou ficar
+    # inconsistente com o SCM.
+    Remove-Item 'HKLM:\SOFTWARE\Ericsson\Erlang\ErlSrv\1.1\RabbitMQ' -Recurse -Force -ErrorAction SilentlyContinue
+
     # Mata (graciosamente e depois à força) processos Erlang/RabbitMQ residuais
     Stop-ErlangProcesses
 
@@ -690,15 +695,22 @@ function Install-ErlangAndRabbitMQ {
         Write-Warn 'Serviço RabbitMQ ainda aparece registrado — feche services.msc/Gerenciador de Tarefas se estiverem abertos.'
     }
 
+    # sc delete só limpa o registro do SCM — o erlsrv mantém seu próprio cadastro do serviço
+    # à parte, e uma entrada velha aqui pode fazer o próximo "erlsrv add" falhar ou ficar
+    # inconsistente com o SCM.
+    Remove-Item 'HKLM:\SOFTWARE\Ericsson\Erlang\ErlSrv\1.1\RabbitMQ' -Recurse -Force -ErrorAction SilentlyContinue
+
     # Mata processos Erlang residuais do installer antes de registrar o serviço
     Stop-ErlangProcesses
 
     $svcLog = Join-Path $env:TEMP 'rabbitmq-service-install.log'
     Remove-Item $svcLog, "$svcLog.err" -ErrorAction SilentlyContinue
     $p = Start-Process 'cmd.exe' -ArgumentList "/c `"$sbin\rabbitmq-service.bat`" install" -PassThru -WindowStyle Hidden -RedirectStandardOutput $svcLog -RedirectStandardError "$svcLog.err"
-    if (-not $p.WaitForExit(20000)) { try { $p.Kill() } catch {} }
-    if ($p.ExitCode -ne 0) {
-        Write-Fail "Falha ao registrar o serviço RabbitMQ (código $($p.ExitCode))."
+    if (-not $p.WaitForExit(60000)) { try { $p.Kill() } catch {}; $p.WaitForExit(5000) | Out-Null }
+    # erlsrv, sob redirecionamento de saída, pode não devolver um exit code confiável a tempo —
+    # a fonte da verdade real é o próprio SCM: se o serviço existe, o registro funcionou.
+    if (-not (Get-Service 'RabbitMQ' -ErrorAction SilentlyContinue)) {
+        Write-Fail 'Falha ao registrar o serviço RabbitMQ.'
         Get-Content $svcLog, "$svcLog.err" -ErrorAction SilentlyContinue | Where-Object { $_ } | ForEach-Object { Write-Warn $_ }
         return
     }
@@ -708,7 +720,7 @@ function Install-ErlangAndRabbitMQ {
     $pluginLog = Join-Path $env:TEMP 'rabbitmq-plugin-enable.log'
     Remove-Item $pluginLog, "$pluginLog.err" -ErrorAction SilentlyContinue
     $p = Start-Process 'cmd.exe' -ArgumentList "/c `"$sbin\rabbitmq-plugins.bat`" enable --offline rabbitmq_management" -PassThru -WindowStyle Hidden -RedirectStandardOutput $pluginLog -RedirectStandardError "$pluginLog.err"
-    if (-not $p.WaitForExit(30000)) { try { $p.Kill() } catch {} }
+    if (-not $p.WaitForExit(30000)) { try { $p.Kill() } catch {}; $p.WaitForExit(5000) | Out-Null }
     if ($p.ExitCode -ne 0) {
         Write-Warn "Management Plugin pode não ter sido habilitado (código $($p.ExitCode))."
         Get-Content $pluginLog, "$pluginLog.err" -ErrorAction SilentlyContinue | Where-Object { $_ } | ForEach-Object { Write-Warn $_ }
