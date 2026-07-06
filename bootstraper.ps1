@@ -598,18 +598,22 @@ function Install-ErlangAndRabbitMQ {
 
     Write-Step 'Instalando RabbitMQ 3.13.7...'
     $rmqBase = Join-Path $env:ProgramFiles 'RabbitMQ Server'
-    $proc = Start-Process -FilePath $rmqPath -ArgumentList '/S' -PassThru
-    # O instalador NSIS pode travar tentando iniciar o serviço — verificamos os arquivos
-    $ready = $false
-    for ($i = 0; $i -lt 60; $i++) {
-        Start-Sleep -Seconds 2
-        if ($proc.HasExited) { $ready = $true; break }
-        if (Get-ChildItem $rmqBase -Directory -Filter 'rabbitmq_server-*' -ErrorAction SilentlyContinue | Select-Object -First 1) {
-            $ready = $true; break
-        }
+    # /NOSERVICEINSTALL impede que o próprio instalador registre/inicie o serviço via "net start"
+    # — é essa etapa interna que travava o instalador silenciosamente. O serviço é registrado e
+    # iniciado por este script logo abaixo, de forma controlada e com timeouts próprios.
+    $proc = Start-Process -FilePath $rmqPath -ArgumentList '/S', '/NOSERVICEINSTALL' -PassThru
+    $proc.WaitForExit(120000)
+    if (-not $proc.HasExited) {
+        Write-Fail 'Instalador do RabbitMQ excedeu o tempo limite.'
+        try { $proc.Kill() } catch {}
+        return
     }
-    if (-not $proc.HasExited) { try { $proc.Kill() } catch {} }
-    if (-not $ready) { Write-Fail 'Arquivos do RabbitMQ não encontrados após instalação.'; return }
+    if ($proc.ExitCode -ne 0) {
+        Write-Fail "Falha na instalação do RabbitMQ. Código: $($proc.ExitCode)"; return
+    }
+    if (-not (Get-ChildItem $rmqBase -Directory -Filter 'rabbitmq_server-*' -ErrorAction SilentlyContinue | Select-Object -First 1)) {
+        Write-Fail 'Arquivos do RabbitMQ não encontrados após instalação.'; return
+    }
     Write-Ok 'RabbitMQ instalado.'
 
     $sbinDir = Get-ChildItem $rmqBase -Directory -Filter 'rabbitmq_server-*' -ErrorAction SilentlyContinue |
