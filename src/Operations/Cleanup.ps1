@@ -47,6 +47,7 @@ function Get-Mago4Entries {
 function Invoke-UninstallEntry {
     param($Entry)
     if (-not $Entry.UninstallString) { Write-Fail "Sem comando de desinstalação: $($Entry.DisplayName)"; return $false }
+    Write-Step "Desinstalando $($Entry.DisplayName). Aguarde; esta etapa pode demorar e o processo não está travado."
     if ($Entry.UninstallString -match 'MsiExec') {
         $guid = if ($Entry.UninstallString -match '(\{[0-9A-Fa-f\-]+\})') { $Matches[1] } else { $null }
         if (-not $guid) { Write-Fail "GUID não encontrado: $($Entry.DisplayName)"; return $false }

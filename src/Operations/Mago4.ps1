@@ -8,9 +8,12 @@
 function Get-MagoInstallRecord {
     $entry = Get-MagoMainEntry
     if (-not $entry) { return $null }
-    $records = @(Get-ChildItem 'HKLM:\SOFTWARE\Microarea\Mago4' -ErrorAction SilentlyContinue | ForEach-Object {
-        Get-ItemProperty -LiteralPath $_.PSPath -ErrorAction SilentlyContinue
-    } | Where-Object { $_.InstallDir })
+    $records = @(foreach ($registryPath in @('HKLM:\SOFTWARE\Microarea\Mago4', 'HKLM:\SOFTWARE\WOW6432Node\Microarea\Mago4')) {
+        Get-ChildItem -LiteralPath $registryPath -ErrorAction SilentlyContinue | ForEach-Object {
+            Get-ItemProperty -LiteralPath $_.PSPath -ErrorAction SilentlyContinue
+        }
+    })
+    $records = @($records | Where-Object { $_.InstallDir } | Sort-Object PSChildName -Unique)
     if ($records.Count -gt 1) { throw 'Mais de um caminho Mago4 no registro. Operação cancelada.' }
     $path = if ($records.Count -eq 1) { [string]$records[0].InstallDir } else { [string]$entry.InstallLocation }
     if (-not $path) { throw 'Pasta instalada não registrada; confirme manualmente antes de continuar.' }
@@ -20,10 +23,56 @@ function Get-MagoInstallRecord {
 function Get-MagoInstallerInfo {
     param([string]$Path)
     $item = Get-Item -LiteralPath $Path -ErrorAction Stop
-    if ($item.Extension -ine '.exe') { throw 'Selecione o instalador .exe do Mago4.' }
-    if ($item.VersionInfo.ProductName -notmatch 'Microarea Installer') { throw 'O arquivo não parece ser o instalador principal do Mago4.' }
-    $version = [version]$item.VersionInfo.ProductVersion
-    return [pscustomobject]@{ Path = $item.FullName; Version = $version }
+    if ($item.Extension -ieq '.exe') {
+        if ($item.VersionInfo.ProductName -notmatch 'Microarea Installer') { throw 'O arquivo não parece ser o instalador principal do Mago4.' }
+        return [pscustomobject]@{ Path = $item.FullName; Version = [version]$item.VersionInfo.ProductVersion; Type = 'Exe'; MshPath = $null; Features = $null }
+    }
+    if ($item.Extension -ine '.msi') { throw 'Selecione o instalador principal .exe ou .msi do Mago4.' }
+    $msi = New-Object -ComObject WindowsInstaller.Installer
+    $database = $msi.OpenDatabase($item.FullName, 0)
+    $name = Get-MagoMsiProperty $database 'ProductName'
+    $maker = Get-MagoMsiProperty $database 'Manufacturer'
+    $version = [version](Get-MagoMsiProperty $database 'ProductVersion')
+    $productCode = Get-MagoMsiProperty $database 'ProductCode'
+    if ($name -notmatch '^Mago4-BR (\d+)\.(\d+)\.(\d+)\.(\d+)$' -or $maker -notmatch 'Microarea|Zucchetti' -or
+        $productCode -notmatch '^\{[0-9A-Fa-f-]{36}\}$') { throw 'MSI principal do Mago4 não reconhecido.' }
+    $displayVersion = [version]($name -replace '^Mago4-BR ', '')
+    if ($displayVersion.Major -ne $version.Major -or $displayVersion.Minor -ne $version.Minor -or $displayVersion.Build -ne $version.Build) {
+        throw 'Versão do MSI principal inconsistente.'
+    }
+    $features = Get-MagoMsiInstallFeatures $database
+    $mshFiles = @(Get-ChildItem -LiteralPath $item.DirectoryName -File -Filter 'MSH*.exe' | Where-Object {
+        $_.VersionInfo.ProductName -match '^Mago Service Hub\b' -and
+        $_.VersionInfo.ProductVersion -match '^\d+\.\d+\.\d+\.\d+$' -and
+        [version]$_.VersionInfo.ProductVersion -eq $displayVersion
+    })
+    if ($mshFiles.Count -ne 1) { throw 'É necessário um único MSHSetup.exe da mesma versão na pasta do MSI principal.' }
+    return [pscustomobject]@{ Path = $item.FullName; Version = $version; Type = 'Msi'; MshPath = $mshFiles[0].FullName; Features = $features }
+}
+
+function Get-MagoMsiInstallFeatures {
+    param($Database)
+    $installLevel = [int](Get-MagoMsiProperty $Database 'INSTALLLEVEL')
+    if ($installLevel -lt 1) { throw 'INSTALLLEVEL inválido no MSI principal.' }
+    $features = @()
+    $hasBrazilianPortuguese = $false
+    $view = $Database.OpenView('SELECT `Feature`, `Feature_Parent`, `Level` FROM `Feature`')
+    try {
+        [void]$view.Execute()
+        while ($record = $view.Fetch()) {
+            $name = [string]$record.StringData(1)
+            $parent = [string]$record.StringData(2)
+            $level = [int]$record.StringData(3)
+            if ($name -eq 'Feat_pt_BR' -and $parent -eq 'Feat_Language_Packages') { $hasBrazilianPortuguese = $true; continue }
+            if ($level -gt 0 -and $level -le $installLevel -and $parent -ne 'Feat_Language_Packages') { $features += $name }
+        }
+    } finally { [void]$view.Close() }
+    if (-not $hasBrazilianPortuguese -or 'Feat_Mago4BR' -notin $features -or
+        'Feat_Language_Packages' -notin $features -or 'Feat_TaskBuilderFramework' -notin $features) {
+        throw 'Estrutura de funcionalidades do MSI principal diferente da esperada.'
+    }
+    $features += 'Feat_pt_BR'
+    return ($features -join ',')
 }
 
 function Get-MagoMsiProperty {
@@ -53,7 +102,20 @@ function Get-MagoVerticalInfo {
     if ($MainVersion -and ($version.Major -ne $MainVersion.Major -or $version.Minor -ne $MainVersion.Minor -or $version.Build -ne $MainVersion.Build)) {
         throw "$name ($version) não corresponde à versão principal $MainVersion."
     }
-    return [pscustomobject]@{ Name = $name; Kind = $kind; Version = $version; Path = (Get-Item -LiteralPath $Path).FullName }
+    return [pscustomobject]@{ Name = $name; Kind = $kind; Version = $version; ProductCode = $productCode; Path = (Get-Item -LiteralPath $Path).FullName }
+}
+
+function Test-MagoVerticalInstalled {
+    param($Vertical)
+    if (-not $Vertical.ProductCode) { throw 'ProductCode do vertical não informado.' }
+    $installer = New-Object -ComObject WindowsInstaller.Installer
+    if ([int]$installer.ProductState($Vertical.ProductCode) -ne 5) { return $false }
+    $name = [string]$installer.ProductInfo($Vertical.ProductCode, 'ProductName')
+    $version = [version]$installer.ProductInfo($Vertical.ProductCode, 'VersionString')
+    return ($name -match "^Mago4 $([regex]::Escape($Vertical.Kind))\b" -and
+        $version.Major -eq $Vertical.Version.Major -and
+        $version.Minor -eq $Vertical.Version.Minor -and
+        $version.Build -eq $Vertical.Version.Build)
 }
 
 function Select-MagoVerticals {
@@ -97,11 +159,29 @@ function Select-MagoVerticals {
 
 function Install-MagoVerticals {
     param([object[]]$Verticals)
+    $script:MagoVerticalInstallHadWarning = $false
+    if (-not $Verticals.Count) { Write-Step 'Nenhum MSI vertical selecionado.'; return $true }
+    Write-Phase "Instalando $($Verticals.Count) vertical(is)"
     foreach ($vertical in $Verticals) {
+        if (-not $vertical.Path -or -not $vertical.Name -or -not $vertical.ProductCode) { throw 'Seleção de vertical inválida.' }
+        $wasInstalled = Test-MagoVerticalInstalled $vertical
         $log = Join-Path (Get-MagoLogDirectory) ("vertical-{0}-{1:yyyyMMdd-HHmmss}.log" -f $vertical.Kind, (Get-Date))
         $args = "/i `"$($vertical.Path)`" /qn /norestart /L*v `"$log`""
+        Write-Step "Instalando $($vertical.Name). Aguarde; esta etapa pode demorar e o processo não está travado."
         $proc = Start-Process msiexec.exe -ArgumentList $args -Wait -PassThru
-        if (-not (Test-MagoExitCode $proc.ExitCode $vertical.Name)) { Write-Warn "Log: $log"; return $false }
+        $isInstalled = Test-MagoVerticalInstalled $vertical
+        if (-not $isInstalled) {
+            Write-Fail "O MSI retornou $($proc.ExitCode) e o vertical $($vertical.Kind) não consta como instalado na versão esperada. Confira o log: $log"
+            return $false
+        }
+        if ($proc.ExitCode -notin @(0, 3010, 1638)) {
+            if ($wasInstalled) {
+                Write-Fail "O MSI retornou $($proc.ExitCode) para um vertical que já estava instalado. Confira o log: $log"
+                return $false
+            }
+            $script:MagoVerticalInstallHadWarning = $true
+            Write-Warn "O MSI retornou $($proc.ExitCode), mas o Windows Installer registra $($vertical.Name) como instalado agora. Confira o log e valide o funcionamento: $log"
+        } else { [void](Test-MagoExitCode $proc.ExitCode $vertical.Name) }
         Write-Step "Log: $log"
     }
     return $true
@@ -124,6 +204,7 @@ function Invoke-MagoExeInstall {
     $parentArgument = $parent.TrimEnd('\') + '\\'
     $args = "INSTALLLOCATION=`"$parentArgument`" INSTANCENAME=`"$instance`""
     $installStarted = Get-Date
+    Write-Step 'Instalando o Mago4. Aguarde o instalador concluir; ele pode ficar vários minutos sem mudar a tela.'
     $proc = Start-Process -FilePath $Installer -ArgumentList $args -Wait -PassThru
     try {
         $burnLog = Get-ChildItem -LiteralPath $env:TEMP -File -Filter 'Microarea_Installer*.log' -ErrorAction SilentlyContinue |
@@ -137,6 +218,37 @@ function Invoke-MagoExeInstall {
     } catch { Write-Warn "Não foi possível copiar o log do instalador: $($_.Exception.Message)" }
     if (-not (Test-MagoExitCode $proc.ExitCode 'Instalação principal')) { return $false }
     return (Test-MagoInstalledResult $Destination)
+}
+
+function Invoke-MagoMsiInstall {
+    param($Installer, [string]$Destination)
+    $parent = Split-Path -Parent $Destination
+    $instance = Split-Path -Leaf $Destination
+    if ($instance -notmatch '^[A-Za-z0-9_-]+$') { throw 'O nome da pasta final deve conter apenas letras, números, hífen ou sublinhado.' }
+    $log = Join-Path (Get-MagoLogDirectory) ("mago4-msi-{0:yyyyMMdd-HHmmss}.log" -f (Get-Date))
+    $parentArgument = $parent.TrimEnd('\') + '\\'
+    $dnchbx86 = if (Test-Path (Join-Path $env:SystemRoot 'SysWOW64\inetsrv\aspnetcore.dll')) { '1' } else { '0' }
+    $dnchbx64 = if (Test-Path (Join-Path $env:SystemRoot 'System32\inetsrv\aspnetcore.dll')) { '1' } else { '0' }
+    $args = "/i `"$($Installer.Path)`" /qn /norestart /L*v `"$log`" ALLUSERS=1 INSTANCENAME=`"$instance`" INSTALLLOCATION=`"$parentArgument`" UICULTURE=pt-BR ADDLOCAL=$($Installer.Features) DEFAULTWEBSITENAME=`"Default Web Site`" DEFAULTWEBSITEID=1 DEFAULTWEBSITEPORT=80 SKIPCLICKONCEDEPLOYER=0 DNCHBX86=$dnchbx86 DNCHBX64=$dnchbx64"
+    Write-Step "Instalando o MSI principal sem interface. Aguarde; o processo pode demorar. Log: $log"
+    $proc = Start-Process msiexec.exe -ArgumentList $args -Wait -PassThru
+    if (-not (Test-MagoExitCode $proc.ExitCode 'MSI principal')) { return $false }
+    if (-not (Invoke-MagoMshInstall $Installer.MshPath)) { return $false }
+    return (Test-MagoInstalledResult $Destination)
+}
+
+function Invoke-MagoMshInstall {
+    param([string]$MshPath)
+    Write-Step 'Instalando Mago Service Hub sem interface. Aguarde; o processo pode demorar.'
+    $msh = Start-Process -FilePath $MshPath -ArgumentList '/install /quiet /norestart' -Wait -PassThru
+    return (Test-MagoExitCode $msh.ExitCode 'Mago Service Hub')
+}
+
+function Invoke-MagoMainInstall {
+    param($Installer, [string]$Destination)
+    if ($Installer.Type -eq 'Msi') { return (Invoke-MagoMsiInstall $Installer $Destination) }
+    if ($Installer.Type -eq 'Exe') { return (Invoke-MagoExeInstall $Installer.Path $Destination) }
+    throw 'Tipo de instalador principal inválido.'
 }
 
 function Test-MagoInstalledResult {
@@ -173,6 +285,7 @@ function Install-MissingMagoDependency {
     param([string]$Id, [string]$Arguments = '/install /quiet /norestart')
     $path = Get-Dependency -Id $Id
     if (-not $path) { return $false }
+    Write-Step "Instalando dependência $Id. Aguarde; o processo pode demorar."
     $proc = Start-Process -FilePath $path -ArgumentList $Arguments -Wait -PassThru
     return (Test-MagoExitCode $proc.ExitCode $Id)
 }
@@ -224,7 +337,7 @@ function Install-MissingMagoDependencies {
 function Invoke-InstalarMago4 {
     Write-SectionHeader 'INSTALAR MAGO4'
     try {
-        $installerPath = Read-ExistingPath 'Caminho do instalador principal .exe' 'File' '.exe'
+        $installerPath = Read-ExistingPath 'Caminho do instalador principal .exe ou .msi' 'File'
         if (-not $installerPath) { return }
         $installer = Get-MagoInstallerInfo $installerPath
         $destination = Read-MagoDestination
@@ -234,12 +347,45 @@ function Invoke-InstalarMago4 {
         }
         $verticals = Select-MagoVerticals $installer.Path $installer.Version
         Write-Step "Instalador: $($installer.Path)"
+        if ($installer.Type -eq 'Msi') { Write-Step "MSH: $($installer.MshPath); idioma e dicionário: pt-BR; sem telas de instalação." }
         Write-Step "Destino: $destination"
         if (-not (Confirm-MagoAction 'Iniciar a instalação?')) { return }
         if (-not (Install-MissingMagoDependencies)) { throw 'Falha ao preparar dependências.' }
-        if (-not (Invoke-MagoExeInstall $installer.Path $destination)) { throw 'A instalação principal não passou na validação.' }
+        if (-not (Invoke-MagoMainInstall $installer $destination)) { throw 'A instalação principal não passou na validação.' }
         if (-not (Install-MagoVerticals $verticals)) { throw 'Um vertical falhou.' }
-        Write-Ok 'Mago4 instalado e validado.'
+        if ($script:MagoVerticalInstallHadWarning) { Write-Warn 'Mago4 instalado; um vertical retornou erro apesar do registro de instalação. Valide seu funcionamento.' }
+        else { Write-Ok 'Mago4 instalado e validado.' }
+    } catch { Write-Fail $_.Exception.Message }
+    finally { Pause-Continue }
+}
+
+function Invoke-InstalarVerticaisMago4 {
+    Write-SectionHeader 'INSTALAR VERTICAIS DO MAGO4'
+    try {
+        $record = Get-MagoInstallRecord
+        if (-not $record) { throw 'Mago4 não está instalado. Use Instalar Mago4.' }
+        $installerPath = Read-ExistingPath 'Caminho do instalador principal .exe ou .msi, para localizar os verticais' 'File'
+        if (-not $installerPath) { return }
+        $installer = Get-MagoInstallerInfo $installerPath
+        $installedVersion = [version]$record.Entry.DisplayVersion
+        if ($installer.Version.Major -ne $installedVersion.Major -or
+            $installer.Version.Minor -ne $installedVersion.Minor -or
+            $installer.Version.Build -ne $installedVersion.Build) {
+            throw "A versão do instalador $($installer.Version) não corresponde ao Mago4 instalado $installedVersion."
+        }
+        $verticals = Select-MagoVerticals $installer.Path $installer.Version
+        if (-not $verticals.Count) { Write-Warn 'Nenhum vertical selecionado.'; return }
+        $installedKinds = @(Get-InstalledVerticalKinds)
+        foreach ($vertical in $verticals) {
+            if ($vertical.Kind -in $installedKinds) {
+                throw "O vertical $($vertical.Kind) já está instalado. Use Atualizar Mago4 para substituí-lo."
+            }
+        }
+        Write-Step "Mago4 instalado: $($record.Path)"
+        if (-not (Confirm-MagoAction 'Instalar os verticais selecionados?')) { return }
+        if (-not (Install-MagoVerticals $verticals)) { throw 'Falha na instalação de um vertical.' }
+        if ($script:MagoVerticalInstallHadWarning) { Write-Warn 'Verticais registrados como instalados; houve erro de MSI. Valide seu funcionamento.' }
+        else { Write-Ok 'Verticais instalados.' }
     } catch { Write-Fail $_.Exception.Message }
     finally { Pause-Continue }
 }
@@ -257,6 +403,7 @@ function Invoke-ReparoSimplesMago4 {
         Write-Step "Produto: $($entry.DisplayName), código: $guid"
         if (-not (Confirm-MagoAction 'Executar o reparo MSI?')) { return }
         $log = Join-Path (Get-MagoLogDirectory) ("repair-{0:yyyyMMdd-HHmmss}.log" -f (Get-Date))
+        Write-Step 'Reparando o Mago4. Aguarde; o processo pode demorar.'
         $proc = Start-Process msiexec.exe -ArgumentList "/fomus $guid /L*v `"$log`"" -Wait -PassThru
         [void](Test-MagoExitCode $proc.ExitCode 'Reparo MSI')
         Write-Step "Log: $log"
@@ -277,12 +424,13 @@ function Invoke-AtualizarMago4 {
         $record = Get-MagoInstallRecord
         if (-not $record) { throw 'Mago4 não está instalado. Use Instalar Mago4.' }
         if (-not (Test-Path -LiteralPath $record.Path -PathType Container)) { throw "Pasta instalada não encontrada: $($record.Path)" }
-        $installerPath = Read-ExistingPath 'Novo instalador principal .exe' 'File' '.exe'
+        $installerPath = Read-ExistingPath 'Novo instalador principal .exe ou .msi' 'File'
         if (-not $installerPath) { return }
         $installer = Get-MagoInstallerInfo $installerPath
         $kinds = Get-InstalledVerticalKinds
         $verticals = Select-MagoVerticals $installer.Path $installer.Version $kinds
         Write-Warn 'A atualização removerá a versão instalada antes de instalar a nova.'
+        if ($installer.Type -eq 'Msi') { Write-Step "MSH: $($installer.MshPath); idioma e dicionário: pt-BR; sem telas de instalação." }
         Write-Step "Instalação atual: $($record.Path)"
         if (-not (Confirm-MagoAction 'Confirma que possui backup e quer atualizar?')) { return }
         $entries = @(Get-Mago4Entries)
@@ -290,9 +438,10 @@ function Invoke-AtualizarMago4 {
         if (-not (Invoke-MagoUninstall -Entries $entries)) { throw 'Falha na desinstalação; instalação nova não iniciada.' }
         if (Get-MagoMainEntry) { throw 'Mago4 ainda consta como instalado. Instalação nova cancelada.' }
         if (-not (Invoke-PostUpdateDependencies)) { throw 'Falha nas dependências pós-atualização.' }
-        if (-not (Invoke-MagoExeInstall $installer.Path $record.Path)) { throw 'Instalação principal não passou na validação.' }
+        if (-not (Invoke-MagoMainInstall $installer $record.Path)) { throw 'Instalação principal não passou na validação.' }
         if (-not (Install-MagoVerticals $verticals)) { throw 'Falha na reinstalação de um vertical.' }
-        Write-Ok 'Atualização concluída.'
+        if ($script:MagoVerticalInstallHadWarning) { Write-Warn 'Atualização concluída com erro de MSI em vertical registrado como instalado. Valide seu funcionamento.' }
+        else { Write-Ok 'Atualização concluída.' }
     } catch { Write-Fail $_.Exception.Message }
     finally { Pause-Continue }
 }
@@ -437,17 +586,22 @@ function Invoke-MagoResume {
         }
         if ($state.Stage -eq 'InstallMain') {
             $mainInstalled = Get-MagoMainEntry
-            if (-not $mainInstalled -and -not (Test-Path -LiteralPath $state.Installer -PathType Leaf)) {
-                Write-Warn 'Instalador principal não está acessível após o reinício.'
-                $replacement = Read-ExistingPath 'Novo caminho do instalador principal .exe' 'File' '.exe'
+            $installerInfo = $null
+            try { $installerInfo = Get-MagoInstallerInfo $state.Installer }
+            catch { Write-Warn "Instalador principal ou MSH não está acessível após o reinício: $($_.Exception.Message)" }
+            if (-not $installerInfo) {
+                $replacement = Read-ExistingPath 'Novo caminho do instalador principal .exe ou .msi' 'File'
                 if (-not $replacement) { throw 'Instalador principal necessário para retomar.' }
-                [void](Get-MagoInstallerInfo $replacement)
+                $installerInfo = Get-MagoInstallerInfo $replacement
                 $state.Installer = $replacement
-                $state.MainVersion = [string](Get-MagoInstallerInfo $replacement).Version
+                $state.MainVersion = [string]$installerInfo.Version
                 Save-MagoSession $state $directory
             }
-            $ok = if ($mainInstalled) { Test-MagoInstalledResult $state.Destination }
-                  else { Invoke-MagoExeInstall $state.Installer $state.Destination }
+            $ok = if ($mainInstalled) {
+                $valid = Test-MagoInstalledResult $state.Destination
+                if ($valid -and $installerInfo.Type -eq 'Msi') { $valid = Invoke-MagoMshInstall $installerInfo.MshPath }
+                $valid
+            } else { Invoke-MagoMainInstall $installerInfo $state.Destination }
             if (-not $ok) { throw 'Instalação principal falhou ou não passou na validação.' }
             $state.Stage = 'InstallVerticals'; Save-MagoSession $state $directory
         }
@@ -461,7 +615,8 @@ function Invoke-MagoResume {
         }
         Unregister-ScheduledTask -TaskName "Mago4-Setup-Resume-$ResumeId" -Confirm:$false -ErrorAction SilentlyContinue
         Remove-Item -LiteralPath $statePath -Force
-        Write-Ok 'Reparo avançado concluído.'
+        if ($script:MagoVerticalInstallHadWarning) { Write-Warn 'Reparo avançado concluído com erro de MSI em vertical registrado como instalado. Valide seu funcionamento.' }
+        else { Write-Ok 'Reparo avançado concluído.' }
     } finally {
         Remove-Item -LiteralPath $lock -Recurse -Force -ErrorAction SilentlyContinue
     }
@@ -489,7 +644,7 @@ function Invoke-ReparoAvancadoMago4 {
         if (Invoke-MagoPendingSession) { return }
         $record = Get-MagoInstallRecord
         if (-not $record) { throw 'Mago4 não está instalado.' }
-        $installerPath = Read-ExistingPath 'Instalador principal .exe' 'File' '.exe'
+        $installerPath = Read-ExistingPath 'Instalador principal .exe ou .msi' 'File'
         if (-not $installerPath) { return }
         $installer = Get-MagoInstallerInfo $installerPath
         $kinds = Get-InstalledVerticalKinds
@@ -502,6 +657,7 @@ function Invoke-ReparoAvancadoMago4 {
         Write-Host ''
         Write-Host '  ATENÇÃO: ESTA OPERAÇÃO APAGA ARQUIVOS DA INSTALAÇÃO.' -ForegroundColor Red
         Write-Warn "Pasta afetada: $destination"
+        if ($installer.Type -eq 'Msi') { Write-Step "MSH: $($installer.MshPath); idioma e dicionário: pt-BR; sem telas de instalação." }
         Write-Warn 'Apps, Custom\ESP, arquivos soltos e parte de Standard serão removidos.'
         Write-Warn 'Companies, ReferencedAssemblies e LoginManager\App_Data serão preservados.'
         if (-not (Confirm-MagoAction 'Você confirma que possui backup?')) { return }

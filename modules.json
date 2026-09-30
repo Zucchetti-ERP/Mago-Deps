@@ -47,7 +47,7 @@
     },
     {
       "path": "src/Operations/Cleanup.ps1",
-      "sha256": "c8f59e280d23bd7b1d2acf41d9f38156dd2e555d5c12d8e5a21ecc61f199bbf0"
+      "sha256": "c49cf342364b2f4c406d1490d6b28b6a2444e52e8756747ee46a4c7d80544b2d"
     },
     {
       "path": "src/Operations/Repair.ps1",
@@ -59,7 +59,7 @@
     },
     {
       "path": "src/Operations/Mago4.ps1",
-      "sha256": "741c16f5b1357ac278c6c66ab07dd21c031668c6719f9f8689011668c1c958ef"
+      "sha256": "d5e87b91f062fe6ff5c439253ed09fba121165906a5c62935fe83f45e01de9f3"
     },
     {
       "path": "src/UI/InstallMenu.ps1",
@@ -71,7 +71,7 @@
     },
     {
       "path": "src/UI/MainMenu.ps1",
-      "sha256": "26a90b499f4a35366cc8343cc72b03a21a4892b301c5a1bd29dfa41020005aeb"
+      "sha256": "89aeaeaf1cf5ee2bc3eb7ec4bc01553e674207f79b5eb0de65652bc2ed4a6d3d"
     }
   ]
 }

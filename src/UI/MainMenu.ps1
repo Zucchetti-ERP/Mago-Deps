@@ -57,8 +57,8 @@ function Invoke-DiagnosticosMenu {
 }
 
 function Invoke-MagoMenu {
-    Invoke-MenuGroup 'INSTALAÇÃO OU ATUALIZAÇÃO' @('Instalar Mago4', 'Atualizar Mago4') @(
-        { Invoke-InstalarMago4 }, { Invoke-AtualizarMago4 }
+    Invoke-MenuGroup 'INSTALAÇÃO OU ATUALIZAÇÃO' @('Instalar Mago4', 'Atualizar Mago4', 'Instalar verticais no Mago4 existente') @(
+        { Invoke-InstalarMago4 }, { Invoke-AtualizarMago4 }, { Invoke-InstalarVerticaisMago4 }
     )
 }
 
