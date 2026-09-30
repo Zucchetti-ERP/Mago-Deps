@@ -13,7 +13,7 @@ function Get-MagoInstallRecord {
             Get-ItemProperty -LiteralPath $_.PSPath -ErrorAction SilentlyContinue
         }
     })
-    $records = @($records | Where-Object { $_.InstallDir } | Sort-Object PSChildName -Unique)
+    $records = @($records | Where-Object { $_.InstallDir -and $_.ProductName -match '^Mago4-BR\b' } | Sort-Object PSChildName -Unique)
     if ($records.Count -gt 1) { throw 'Mais de um caminho Mago4 no registro. Operação cancelada.' }
     $path = if ($records.Count -eq 1) { [string]$records[0].InstallDir } else { [string]$entry.InstallLocation }
     if (-not $path) { throw 'Pasta instalada não registrada; confirme manualmente antes de continuar.' }

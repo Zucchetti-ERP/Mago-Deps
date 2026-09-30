@@ -59,7 +59,7 @@
     },
     {
       "path": "src/Operations/Mago4.ps1",
-      "sha256": "d5e87b91f062fe6ff5c439253ed09fba121165906a5c62935fe83f45e01de9f3"
+      "sha256": "d663139417f226319fe2c369dcbcf6af16d79b160eeeed55dbb44a5bd0d4f3a1"
     },
     {
       "path": "src/UI/InstallMenu.ps1",

@@ -71,13 +71,16 @@ function Get-MagoMainEntry { return [pscustomobject]@{ InstallLocation = 'C:\Mag
 function Get-ChildItem {
     param([string]$LiteralPath)
     if ($LiteralPath -eq 'HKLM:\SOFTWARE\WOW6432Node\Microarea\Mago4') {
-        return [pscustomobject]@{ PSPath = 'mock-registry-entry' }
+        return @([pscustomobject]@{ PSPath = 'mock-vertical-entry' }, [pscustomobject]@{ PSPath = 'mock-registry-entry' })
     }
 }
 function Get-ItemProperty {
     param([string]$LiteralPath)
+    if ($LiteralPath -eq 'mock-vertical-entry') {
+        return [pscustomobject]@{ PSChildName = 'mock-vertical-guid'; InstallDir = 'C:\Mago\Mago4\'; ProductName = 'Mago4 MSO 6.0.0' }
+    }
     if ($LiteralPath -eq 'mock-registry-entry') {
-        return [pscustomobject]@{ PSChildName = 'mock-guid'; InstallDir = 'C:\Mago\Mago4\'; UICulture = 'pt-BR'; Dictionaries = 'pt-BR ' }
+        return [pscustomobject]@{ PSChildName = 'mock-guid'; InstallDir = 'C:\Mago\Mago4\'; ProductName = 'Mago4-BR 6.0.0.0021'; UICulture = 'pt-BR'; Dictionaries = 'pt-BR ' }
     }
 }
 $record = Get-MagoInstallRecord
