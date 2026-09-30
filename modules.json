@@ -1,0 +1,77 @@
+{
+  "schema": 1,
+  "modules": [
+    {
+      "path": "src/Core/Runtime.ps1",
+      "sha256": "1d5278d11ee433061e9df3fa3279824420af4e3178167828729e5725c63482b5"
+    },
+    {
+      "path": "src/Core/Output.ps1",
+      "sha256": "97793136bc1538557a04978608696a71dbb6faee19339296593ed916c8d22638"
+    },
+    {
+      "path": "src/Core/Http.ps1",
+      "sha256": "5d73166e938a6b4dc99a66814d6d7a39722c1b485e4e9a705de79f1eafe17fc3"
+    },
+    {
+      "path": "src/Dependencies/Manifest.ps1",
+      "sha256": "343465322c686c22b017e192af215feb61579526d473a8732725894b4abe14a5"
+    },
+    {
+      "path": "src/Dependencies/WindowsFeatures.ps1",
+      "sha256": "e252183d6c65724e358d87c9538cdefb39dd3e6842f1a70fd6152af2de02aa1a"
+    },
+    {
+      "path": "src/Dependencies/VisualCpp.ps1",
+      "sha256": "78c8acc3eba309036ebe6ab6f3e6a90b2ca2a9b8c877104f8a58f61b6447b110"
+    },
+    {
+      "path": "src/Dependencies/DotNet.ps1",
+      "sha256": "87f155958da47f529afd560620db381fd04ecac700d60c1c585589b06e360c5f"
+    },
+    {
+      "path": "src/Dependencies/IisRewrite.ps1",
+      "sha256": "aed68df217f5151bd9cd99617e2489f264ba57ecc09996c40081f82d42496810"
+    },
+    {
+      "path": "src/Dependencies/RabbitMq.ps1",
+      "sha256": "1e40e1868cf05d41cc6505c16fe3695eebe9164a6a78d43da28d09798f7dcb26"
+    },
+    {
+      "path": "src/Operations/Install.ps1",
+      "sha256": "3848a2ac9e428a9847ae3ff283bd4aef7c611b0c4d6b555f60b06a1c4a96ab3a"
+    },
+    {
+      "path": "src/Operations/Verify.ps1",
+      "sha256": "a52ee08d8e4909b25a2375409e28dd1a6ba5f7297c0b3c0e7525b147b80d38dc"
+    },
+    {
+      "path": "src/Operations/Cleanup.ps1",
+      "sha256": "c8f59e280d23bd7b1d2acf41d9f38156dd2e555d5c12d8e5a21ecc61f199bbf0"
+    },
+    {
+      "path": "src/Operations/Repair.ps1",
+      "sha256": "dc339ec76deb0a8dff4608b0752ee5d16999b1eb06ccd258a8b1d6db8e30f17e"
+    },
+    {
+      "path": "src/Operations/Diagnostics.ps1",
+      "sha256": "3686997a7a85b51f8dd289e383954991c81fbb54fe49b675f069da14a832a769"
+    },
+    {
+      "path": "src/Operations/Mago4.ps1",
+      "sha256": "741c16f5b1357ac278c6c66ab07dd21c031668c6719f9f8689011668c1c958ef"
+    },
+    {
+      "path": "src/UI/InstallMenu.ps1",
+      "sha256": "3adff95f0a560a405c29aa442a226b9c5e20e976e7bdbb720e7a85bbfbcc5dba"
+    },
+    {
+      "path": "src/UI/CleanupMenu.ps1",
+      "sha256": "48e2704f4ca34f8a7721814d1790c4349006b5061d7ead7543795aee537e6ea8"
+    },
+    {
+      "path": "src/UI/MainMenu.ps1",
+      "sha256": "26a90b499f4a35366cc8343cc72b03a21a4892b301c5a1bd29dfa41020005aeb"
+    }
+  ]
+}
