@@ -14,6 +14,16 @@ O script solicita elevação administrativa. Ele resolve um commit do repositór
 
 Para desenvolvimento local, execute `powershell.exe -File .\bootstraper.ps1 -Local`. Para testar a carga sem abrir o menu, use `-Local -NoMenu` em uma janela elevada. `-Ref <SHA-40>` carrega uma revisão remota específica.
 
+Para testar uma branch antes de publicar em `master`, informe a branch ao carregador na mesma sessão:
+
+```powershell
+$env:MAGO_DEPS_BRANCH = 'test'
+irm https://raw.githubusercontent.com/Zucchetti-ERP/Mago-Deps/refs/heads/test/bootstraper.ps1 | iex
+Remove-Item Env:MAGO_DEPS_BRANCH
+```
+
+O conteúdo recebido por `irm | iex` não informa ao script a URL de origem. Por isso a variável `MAGO_DEPS_BRANCH` deve acompanhar a URL usada. Em uma chamada local também é possível passar `-Branch test`.
+
 ## Menu
 
 1. **Instalação de Dependências:** mantém os perfis de instalação completos, Mago4, MSH, pós-atualização, IIS e dependência individual.
@@ -48,4 +58,4 @@ No instalador do Mago4, `INSTALLLOCATION` recebe a **pasta pai**, enquanto `INST
 
 Depois de modificar qualquer módulo, execute `python tools/update-modules-manifest.py` e publique o `modules.json` atualizado junto com os módulos. Os logs operacionais ficam em `%ProgramData%\Mago4-Setup\Logs`; sessões pendentes de reparo avançado ficam em `%ProgramData%\Mago4-Setup\Sessions`.
 
-Os arquivos `.ps1` usam UTF-8 com BOM para Windows PowerShell 5.1 e são armazenados sem conversão de fim de linha no Git, pois os hashes precisam refletir exatamente os bytes publicados. O teste local não destrutivo é `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\Smoke.ps1`.
+Os módulos `.ps1` usam UTF-8 com BOM para Windows PowerShell 5.1. O `bootstraper.ps1` usa ASCII sem BOM para funcionar com `irm | iex`. Os arquivos são armazenados sem conversão de fim de linha no Git, pois os hashes precisam refletir exatamente os bytes publicados. Os testes locais não destrutivos são `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\BootstrapSmoke.ps1` e `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\Smoke.ps1`.

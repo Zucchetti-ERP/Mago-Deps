@@ -11,7 +11,7 @@
     },
     {
       "path": "src/Core/Http.ps1",
-      "sha256": "5d73166e938a6b4dc99a66814d6d7a39722c1b485e4e9a705de79f1eafe17fc3"
+      "sha256": "3a5d91bd3965b99007352dde1916c00f7445d24912218bf98434123212bb7eae"
     },
     {
       "path": "src/Dependencies/Manifest.ps1",

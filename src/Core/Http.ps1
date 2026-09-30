@@ -14,10 +14,3 @@
         return @{ Code = -1; Ok = $false }
     }
 }
-
-
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-
-$script:Manifest    = $null
-$script:ManifestUrl = 'https://raw.githubusercontent.com/Zucchetti-ERP/Mago-Deps/master/manifest.json'
-$script:DownloadDir = Join-Path $env:TEMP 'Mago4-Setup'
