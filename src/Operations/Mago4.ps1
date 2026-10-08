@@ -271,7 +271,7 @@ function Test-MagoInstalledResult {
 }
 
 function Read-MagoDestination {
-    Write-Host '  Você pode arrastar uma pasta para esta janela.' -ForegroundColor DarkGray
+    Write-Host '  Dica: no Explorer, Shift + botão direito > Copiar como caminho, e cole aqui.' -ForegroundColor DarkGray
     $inputPath = (Read-Host "  Pasta final do Mago4 [Enter: $script:DefaultMagoPath]").Trim().Trim('"', "'")
     if (-not $inputPath) { $inputPath = $script:DefaultMagoPath }
     $path = [IO.Path]::GetFullPath($inputPath).TrimEnd('\')
@@ -432,7 +432,8 @@ function Invoke-AtualizarMago4 {
         Write-Warn 'A atualização removerá a versão instalada antes de instalar a nova.'
         if ($installer.Type -eq 'Msi') { Write-Step "MSH: $($installer.MshPath); idioma e dicionário: pt-BR; sem telas de instalação." }
         Write-Step "Instalação atual: $($record.Path)"
-        if (-not (Confirm-MagoAction 'Confirma que possui backup e quer atualizar?')) { return }
+        Write-Warn 'Se a nova versão altera o banco de dados, faça backup do banco antes de continuar.'
+        if (-not (Confirm-MagoAction 'Confirma que deseja atualizar?')) { return }
         $entries = @(Get-Mago4Entries)
         if (-not @($entries | Where-Object { $_.DisplayName -match '^Mago4-BR\b' }).Count) { throw 'Entrada principal desapareceu antes da desinstalação.' }
         if (-not (Invoke-MagoUninstall -Entries $entries)) { throw 'Falha na desinstalação; instalação nova não iniciada.' }
@@ -660,7 +661,7 @@ function Invoke-ReparoAvancadoMago4 {
         if ($installer.Type -eq 'Msi') { Write-Step "MSH: $($installer.MshPath); idioma e dicionário: pt-BR; sem telas de instalação." }
         Write-Warn 'Apps, Custom\ESP, arquivos soltos e parte de Standard serão removidos.'
         Write-Warn 'Companies, ReferencedAssemblies e LoginManager\App_Data serão preservados.'
-        if (-not (Confirm-MagoAction 'Você confirma que possui backup?')) { return }
+        if (-not (Confirm-MagoAction 'Confirma que deseja continuar?')) { return }
         if (-not (Confirm-MagoAction 'Confirma o reparo destrutivo da pasta exibida?')) { return }
         $entries = @(Get-Mago4Entries)
         if (-not @($entries | Where-Object { $_.DisplayName -match '^Mago4-BR\b' }).Count) { throw 'Entrada principal desapareceu antes da desinstalação.' }

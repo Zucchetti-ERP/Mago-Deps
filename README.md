@@ -10,6 +10,18 @@ No Windows PowerShell, execute:
 irm https://raw.githubusercontent.com/Zucchetti-ERP/Mago-Deps/refs/heads/master/bootstraper.ps1 | iex
 ```
 
+Se o PowerShell recusar com a mensagem *"a execução de scripts foi desabilitada neste sistema"*, libere a execução para o seu usuário e rode o comando de novo:
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+```
+
+A alteração vale só para o usuário atual e não exige administrador. Confira com `Get-ExecutionPolicy -List`. Se a política vier de GPO (`MachinePolicy` ou `UserPolicy` preenchidos), ela não pode ser alterada localmente: procure o time de TI.
+
+Nos campos que pedem caminho, arrastar o arquivo para a janela não funciona, porque o Windows bloqueia arrastar e soltar em janelas de administrador. Use **Shift + botão direito → Copiar como caminho** no Explorer e cole na janela.
+
+O passo a passo para técnicos, com solução de problemas comuns, está em [docs/manual.md](docs/manual.md).
+
 O script solicita elevação administrativa. Ele resolve um commit do repositório, baixa os módulos desse mesmo commit por HTTPS e confere o SHA-256 de cada arquivo antes de carregá-lo. A publicação deve incluir `bootstraper.ps1`, `modules.json` e todos os arquivos em `src/` no mesmo commit.
 
 Para desenvolvimento local, execute `powershell.exe -File .\bootstraper.ps1 -Local`. Para testar a carga sem abrir o menu, use `-Local -NoMenu` em uma janela elevada. `-Ref <SHA-40>` carrega uma revisão remota específica.
@@ -36,11 +48,13 @@ As operações que removem instalações ou arquivos pedem confirmação. Nenhum
 
 ## Instalar, atualizar e reparar
 
+O time de QA distribui o instalador principal nos dois formatos: `.exe` e `.msi` acompanhado do `MSHSetup*.exe` da mesma versão. O script aceita qualquer um deles. O idioma e o dicionário são sempre `pt-BR`.
+
 **Instalar Mago4** solicita o instalador principal (`.exe` ou `.msi`) e a pasta final, verifica instalações existentes, prepara dependências ausentes, localiza MSIs verticais na pasta do instalador e permite adicionar outros manualmente. Uma instalação existente ou uma pasta de destino ocupada bloqueia o fluxo. Com o `.exe`, o instalador abre com interface: selecione **Português (Brasil)** e o dicionário `pt-BR`. Com o `.msi`, coloque o `MSHSetup*.exe` da mesma versão na mesma pasta; o script instala o MSI e o Mago Service Hub sem interface, selecionando `pt-BR` e as funcionalidades padrão do MSI. Em ambos os casos, valida o caminho, `UICulture` e `Dictionaries` antes de instalar os verticais. As etapas demoradas mostram uma mensagem para aguardar.
 
-No instalador do Mago4, `INSTALLLOCATION` recebe a **pasta pai**, enquanto `INSTANCENAME` compõe a pasta final. O destino padrão é `C:\Program Files (x86)\Microarea\Mago4`. A validação após a instalação interrompe o fluxo se o instalador usar um caminho diferente. A opção `.msi` usa `ADDLOCAL` com as funcionalidades padrão e `Feat_pt_BR`; ela não instala o Mago4 App Pool Manager incluído no pacote `.exe`.
+No instalador do Mago4, `INSTALLLOCATION` recebe a **pasta pai**, enquanto `INSTANCENAME` compõe a pasta final. O destino padrão é `C:\Program Files (x86)\Microarea\Mago4`. A validação após a instalação interrompe o fluxo se o instalador usar um caminho diferente. A opção `.msi` usa `ADDLOCAL` com as funcionalidades padrão e `Feat_pt_BR`.
 
-**Atualizar Mago4** identifica a instalação e os verticais, solicita os novos instaladores, remove verticais antes do produto principal, executa as dependências pós-atualização e instala a versão nova no caminho registrado. Verticais sem MSI novo são avisados e não reinstalados.
+**Atualizar Mago4** identifica a instalação e os verticais, solicita os novos instaladores, remove verticais antes do produto principal, executa as dependências pós-atualização e instala a versão nova no caminho registrado. Verticais sem MSI novo são avisados e não reinstalados. Quando a nova versão altera o banco de dados, faça backup do banco antes; o script exibe esse aviso. Os reparos não alteram o banco de dados.
 
 **Instalar verticais no Mago4 existente** localiza os MSIs junto ao instalador principal informado, verifica a versão instalada e instala apenas os verticais selecionados. Use esta opção para completar uma instalação que terminou sem os verticais, sem reinstalar o produto principal. Se um MSI retornar erro após instalar um vertical novo, o script consulta o Windows Installer pelo `ProductCode` e pela versão: continua com aviso somente quando a instalação for confirmada; nos demais casos, interrompe e indica o log.
 

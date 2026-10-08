@@ -8,7 +8,7 @@ $script:SessionRoot = Join-Path $env:ProgramData 'Mago4-Setup\Sessions'
 
 function Read-ExistingPath {
     param([string]$Prompt, [ValidateSet('File','Directory')][string]$Type = 'File', [string]$Extension = '')
-    Write-Host '  Você pode arrastar o arquivo ou a pasta para esta janela.' -ForegroundColor DarkGray
+    Write-Host '  Dica: no Explorer, Shift + botão direito > Copiar como caminho, e cole aqui.' -ForegroundColor DarkGray
     $value = (Read-Host "  $Prompt").Trim().Trim('"', "'")
     if (-not $value) { return $null }
     try {

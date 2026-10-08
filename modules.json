@@ -3,7 +3,7 @@
   "modules": [
     {
       "path": "src/Core/Runtime.ps1",
-      "sha256": "1d5278d11ee433061e9df3fa3279824420af4e3178167828729e5725c63482b5"
+      "sha256": "e65a6e8330990d4c4ae28bd945af9d47a44256ed88014b6fb2be5a056dd75935"
     },
     {
       "path": "src/Core/Output.ps1",
@@ -59,7 +59,7 @@
     },
     {
       "path": "src/Operations/Mago4.ps1",
-      "sha256": "d663139417f226319fe2c369dcbcf6af16d79b160eeeed55dbb44a5bd0d4f3a1"
+      "sha256": "a6bd660c59cb0e32af7d07377eeea16c479595bb46d037527b4461bc0e826670"
     },
     {
       "path": "src/UI/InstallMenu.ps1",
