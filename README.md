@@ -40,6 +40,8 @@ O conteúdo recebido por `irm | iex` não informa ao script a URL de origem. Por
 
 1. **Instalação de Dependências:** mantém os perfis de instalação completos, Mago4, MSH, pós-atualização, IIS e dependência individual.
 2. **Opções de reparo:** Corrigir RabbitMQ, Reparar erro .NET Core, Reparo simples do Mago4 e Reparo avançado do Mago4.
+
+As opções que instalam o RabbitMQ (Corrigir RabbitMQ e as instalações de dependências completa e MSH) perguntam a versão do Mago: **6.0** instala RabbitMQ 3.13.7 + Erlang 27.3.4.13; **6.1** instala RabbitMQ 4.4.1 + Erlang 28.5.0.8. As versões ficam em `manifest.json` e na tabela `$script:RabbitMQProfiles` de `src/Dependencies/RabbitMq.ps1`.
 3. **Diagnósticos:** Verificação de Dependências e Diagnóstico Completo do Sistema.
 4. **Opções de Limpeza:** Limpeza Simples e Desinstalar Mago4. A antiga Limpeza Completa foi removida.
 5. **Instalação ou Atualização do Mago4:** Instalar Mago4, Atualizar Mago4 e instalar verticais numa instalação existente.

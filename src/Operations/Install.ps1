@@ -1,5 +1,9 @@
 ﻿function Invoke-DepCompleta {
     Write-SectionHeader 'INSTALAÇÃO COMPLETA (IIS + MAGO4 + MSH)'
+    # Pergunta já no início para a instalação seguir sem interrupções até a fase do MSH.
+    $rabbitProfile = Select-RabbitMQProfile
+    if (-not $rabbitProfile) { Write-Warn 'Instalação cancelada.'; Pause-Continue; return }
+    Write-Host ''
     Write-Host '  FASE 1/3 — IIS' -ForegroundColor Yellow
     Enable-IISFeatures
     Write-Host ''
@@ -11,7 +15,7 @@
     Write-Host ''
     Write-Host '  FASE 3/3 — MSH' -ForegroundColor Yellow
     Install-IISRewrite
-    Install-ErlangAndRabbitMQ
+    Install-ErlangAndRabbitMQ -RabbitProfile $rabbitProfile
     Write-Host ''
     Write-Ok 'Instalação completa concluída!'
     Pause-Continue
@@ -30,8 +34,10 @@ function Invoke-DepMago4 {
 
 function Invoke-DepMSH {
     Write-SectionHeader 'INSTALAÇÃO DE DEPENDÊNCIAS MSH'
+    $rabbitProfile = Select-RabbitMQProfile
+    if (-not $rabbitProfile) { Write-Warn 'Instalação cancelada.'; Pause-Continue; return }
     Install-IISRewrite
-    Install-ErlangAndRabbitMQ
+    Install-ErlangAndRabbitMQ -RabbitProfile $rabbitProfile
     Write-Host ''
     Write-Ok 'Dependências MSH instaladas!'
     Pause-Continue

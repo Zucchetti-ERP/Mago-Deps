@@ -1,6 +1,8 @@
 ﻿function Invoke-RabbitMQ {
     Write-SectionHeader 'INSTALAR/CORRIGIR RABBITMQ'
-    Install-ErlangAndRabbitMQ
+    $rabbitProfile = Select-RabbitMQProfile
+    if (-not $rabbitProfile) { Write-Warn 'Operação cancelada.'; Pause-Continue; return }
+    Install-ErlangAndRabbitMQ -RabbitProfile $rabbitProfile
     Write-Host ''
     Write-Ok 'RabbitMQ configurado!'
     Pause-Continue

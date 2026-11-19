@@ -127,10 +127,21 @@ Se a desinstalação falhar, a instalação nova não começa.
 
 | Opção | Quando usar | O que faz |
 |---|---|---|
-| **Corrigir RabbitMQ** | Problemas com filas e mensageria. | Instala ou corrige Erlang e RabbitMQ. |
+| **Corrigir RabbitMQ** | Problemas com filas e mensageria. | Pergunta a versão do Mago (6.0 ou 6.1) e reinstala Erlang e RabbitMQ correspondentes (veja abaixo). |
 | **Reparar erro .NET Core** | Erros 500.x, M4Server sem resposta, falhas do AspNetCore. | Reinstala o .NET 10 Hosting Bundle e oferece um diagnóstico **somente leitura** (veja abaixo). |
 | **Reparo simples do Mago4** | Arquivos corrompidos ou ausentes, configuração ok. | Executa o reparo do Windows Installer (`msiexec /fomus`) com log `repair-*.log`. **Não apaga nada.** |
 | **Reparo avançado do Mago4** | O reparo simples não resolveu. | Desinstala, limpa, reinicia e reinstala (veja abaixo). **Destrutivo.** |
+
+### Versão do RabbitMQ
+
+As opções **Corrigir RabbitMQ**, **Instalação de dependências completa** e **Instalação de dependências MSH** perguntam qual versão do Mago está sendo instalada:
+
+| Opção | Instala |
+|---|---|
+| **Mago 6.0** | RabbitMQ 3.13.7 + Erlang 27.3.4.13 |
+| **Mago 6.1** | RabbitMQ 4.4.1 + Erlang 28.5.0.8 |
+
+O RabbitMQ e o Erlang que já estiverem instalados (e os dados em `%APPDATA%\RabbitMQ`) são **removidos** antes da instalação nova, então é possível trocar de uma versão para a outra. A versão instalada atualmente aparece abaixo da pergunta.
 
 ### Diagnóstico .NET Core
 

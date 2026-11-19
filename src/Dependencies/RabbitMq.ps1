@@ -1,4 +1,63 @@
-﻿function Wait-ServiceRemoved {
+﻿# Pares Erlang/RabbitMQ suportados por versão do Mago. Os Ids apontam para o manifest.json —
+# ao trocar uma versão, atualize as duas pontas (manifest e esta tabela).
+# Compatibilidade Erlang x RabbitMQ: https://www.rabbitmq.com/docs/which-erlang
+$script:RabbitMQProfiles = @(
+    [pscustomobject]@{
+        Key = '1'; MagoVersion = '6.0'
+        ErlangId = 'erlang';      ErlangVersion = '27.3.4.13'
+        RabbitId = 'rabbitmq';    RabbitVersion = '3.13.7'
+    }
+    [pscustomobject]@{
+        Key = '2'; MagoVersion = '6.1'
+        ErlangId = 'erlang-rmq4'; ErlangVersion = '28.5.0.8'
+        RabbitId = 'rabbitmq-4';  RabbitVersion = '4.4.1'
+    }
+)
+
+function Get-InstalledRabbitMQVersion {
+    foreach ($regPath in @(
+        'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*',
+        'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*'
+    )) {
+        $entry = Get-ItemProperty $regPath -ErrorAction SilentlyContinue |
+                 Where-Object { $_.DisplayName -match 'RabbitMQ' } | Select-Object -First 1
+        if ($entry) { return [string]$entry.DisplayVersion }
+    }
+    return $null
+}
+
+function Select-RabbitMQProfile {
+    # Pergunta qual versão do Mago está sendo instalada e devolve o par Erlang/RabbitMQ
+    # correspondente. Retorna $null se o usuário cancelar.
+    $installed = Get-InstalledRabbitMQVersion
+    while ($true) {
+        Write-Host ''
+        Write-Host '  Qual versão do Mago está sendo instalada?' -ForegroundColor Yellow
+        Write-Host ''
+        foreach ($p in $script:RabbitMQProfiles) {
+            Write-Host "    [$($p.Key)] " -NoNewline -ForegroundColor Green
+            Write-Host "Mago $($p.MagoVersion)" -NoNewline -ForegroundColor White
+            Write-Host "  — RabbitMQ $($p.RabbitVersion) + Erlang $($p.ErlangVersion)" -ForegroundColor DarkGray
+        }
+        Write-Host '    [0] ' -NoNewline -ForegroundColor Red
+        Write-Host 'Cancelar' -ForegroundColor White
+        if ($installed) {
+            Write-Host ''
+            Write-Host "  RabbitMQ instalado atualmente: $installed (será removido e substituído)" -ForegroundColor DarkGray
+        }
+        Write-Host ''
+        $choice = (Read-Host '  Opção').Trim()
+        if ($choice -eq '0') { return $null }
+        $selected = $script:RabbitMQProfiles | Where-Object { $_.Key -eq $choice } | Select-Object -First 1
+        if ($selected) {
+            Write-Ok "Mago $($selected.MagoVersion) selecionado: RabbitMQ $($selected.RabbitVersion) + Erlang $($selected.ErlangVersion)."
+            return $selected
+        }
+        Write-Fail 'Opção inválida. Tente novamente.'
+    }
+}
+
+function Wait-ServiceRemoved {
     param([string]$Name, [int]$TimeoutSeconds = 10)
     for ($i = 0; $i -lt ($TimeoutSeconds * 2); $i++) {
         if (-not (Get-Service $Name -ErrorAction SilentlyContinue)) { return $true }
@@ -119,6 +178,16 @@ function Clear-ErlangRabbitMQ {
 }
 
 function Install-ErlangAndRabbitMQ {
+    # Sem -RabbitProfile, pergunta ao usuário. Os fluxos que instalam várias dependências em
+    # sequência perguntam antes de começar e repassam a escolha, para não parar no meio.
+    param([object]$RabbitProfile)
+    if (-not $RabbitProfile) {
+        $RabbitProfile = Select-RabbitMQProfile
+        if (-not $RabbitProfile) { Write-Warn 'Instalação do RabbitMQ cancelada.'; return }
+    }
+    $erlVersion = $RabbitProfile.ErlangVersion
+    $rmqVersion = $RabbitProfile.RabbitVersion
+
     Clear-ErlangRabbitMQ
 
     # ── Erlang ──
@@ -129,10 +198,10 @@ function Install-ErlangAndRabbitMQ {
         Write-Fail "A limpeza não conseguiu remover uma instalação anterior do Erlang ($($staleErlDir.FullName)). Feche processos que possam estar usando a pasta (Explorer, antivírus, terminal) e tente novamente."
         return
     }
-    $erlPath = Get-Dependency -Id 'erlang'
+    $erlPath = Get-Dependency -Id $RabbitProfile.ErlangId
     if (-not $erlPath) { return }
 
-    Write-Step 'Instalando Erlang 27.3.4.13...'
+    Write-Step "Instalando Erlang $erlVersion..."
     $proc = Start-Process -FilePath $erlPath -ArgumentList '/S' -Wait -PassThru
     if ($proc.ExitCode -ne 0) {
         Write-Fail "Falha na instalação do Erlang. Código: $($proc.ExitCode)"; return
@@ -151,11 +220,11 @@ function Install-ErlangAndRabbitMQ {
     }
 
     # ── RabbitMQ ──
-    Write-Phase 'RabbitMQ 3.13.7'
-    $rmqPath = Get-Dependency -Id 'rabbitmq'
+    Write-Phase "RabbitMQ $rmqVersion"
+    $rmqPath = Get-Dependency -Id $RabbitProfile.RabbitId
     if (-not $rmqPath) { return }
 
-    Write-Step 'Instalando RabbitMQ 3.13.7...'
+    Write-Step "Instalando RabbitMQ $rmqVersion..."
     $rmqBase = Join-Path $env:ProgramFiles 'RabbitMQ Server'
     # /NOSERVICEINSTALL impede que o próprio instalador registre/inicie o serviço via "net start"
     # — é essa etapa interna que travava o instalador silenciosamente. O serviço é registrado e

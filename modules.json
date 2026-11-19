@@ -35,11 +35,11 @@
     },
     {
       "path": "src/Dependencies/RabbitMq.ps1",
-      "sha256": "1e40e1868cf05d41cc6505c16fe3695eebe9164a6a78d43da28d09798f7dcb26"
+      "sha256": "f75fb2da897eebc51c6398263eecdcf44064ce0d260d5fe1ee14ccdb527b3e4e"
     },
     {
       "path": "src/Operations/Install.ps1",
-      "sha256": "3848a2ac9e428a9847ae3ff283bd4aef7c611b0c4d6b555f60b06a1c4a96ab3a"
+      "sha256": "c1e3b98edad34f68565ec26d42706c0bc231b7d3f6bcafff2c3030cda3030397"
     },
     {
       "path": "src/Operations/Verify.ps1",
@@ -51,7 +51,7 @@
     },
     {
       "path": "src/Operations/Repair.ps1",
-      "sha256": "dc339ec76deb0a8dff4608b0752ee5d16999b1eb06ccd258a8b1d6db8e30f17e"
+      "sha256": "04f49395e935f354d2faa7684d8cc7b847b4deab782c65744b54a1ab3a1b3ea1"
     },
     {
       "path": "src/Operations/Diagnostics.ps1",
